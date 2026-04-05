@@ -266,6 +266,7 @@ NAMESPACE_BEGIN(Vars)
 		CVar(NavbotBlacklist, "Navbot blacklisted color", Color_t(255, 0, 0, 255), VISUAL);
 		CVar(FollowbotPathLine, "Followbot path line color", Color_t(255, 255, 0, 255), VISUAL);
 		CVar(FollowbotPathBox, "Followbot path box color", Color_t(255, 255, 0, 255), VISUAL);
+		CVar(EdgebugPath, "Auto edgebug path color", Color_t(255, 255, 255, 255), VISUAL);
 
 		CVar(HurtTrigger, "Hurt trigger color", Color_t(248, 155, 0, 80), VISUAL);
 		CVar(IgniteTrigger, "Ignite trigger color", Color_t(248, 155, 0, 80), VISUAL);
@@ -791,6 +792,7 @@ I dont think this is a good idea to disable simulations completely:
 			CVar(Bunnyhop, "Bunnyhop", false);
 			CVar(EdgeJump, "Edge jump", false);
 			CVar(AutoJumpbug, "Auto jumpbug", false);
+			CVar(AutoEdgebug, "Auto edgebug", false);
 			CVar(NoPush, "No push", false);
 			CVar(AutoRocketJump, "Auto rocket jump", false);
 			CVar(AutoFaNJump, "Auto FaN jump", false);
@@ -903,6 +905,13 @@ I dont think this is a good idea to disable simulations completely:
 
 			CVar(AutoFaNJumpOnSolidTicks, "On solid ticks", 8, NOSAVE | DEBUGVAR, 2, 30);
 			CVar(AutoFaNJumpCheckCeiling, "Check ceiling", true, NOSAVE | DEBUGVAR);
+
+			CVar(AutoEdgebugStrafe, "Strafe", false, NOSAVE | DEBUGVAR);
+			CVar(AutoEdgebugStrafeSilentLook, "Strafe silent", false, NOSAVE | DEBUGVAR);
+			CVar(AutoEdgebugStrafeSamples, "Strafe samples", 6, NOSAVE | DEBUGVAR | SLIDER_CLAMP, 3, 15);
+			CVar(AutoEdgebugStrafeMaxDelta, "Max delta", 180, NOSAVE | DEBUGVAR | SLIDER_CLAMP, 1, 360);
+			CVar(AutoEdgebugTryNegativeDir, "Try negative dir", true, NOSAVE | DEBUGVAR);
+			CVar(AutoEdgebugTryRandomMove, "Try random move", true, NOSAVE | DEBUGVAR);
 		NAMESPACE_END(Movement)
 
 		NAMESPACE_BEGIN(Automation)

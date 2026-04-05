@@ -6,6 +6,7 @@
 #include "../Players/PlayerUtils.h"
 #include "../Players/SteamProfileCache.h"
 #include "../Aimbot/AutoRocketJump/AutoRocketJump.h"
+#include "../EnginePrediction/EnginePrediction.h"
 #ifdef TEXTMODE
 #include "NamedPipe/NamedPipe.h"
 #endif
@@ -59,11 +60,17 @@ void CMisc::RunPost(CTFPlayer* pLocal, CUserCmd* pCmd)
 		TauntKartControl(pLocal, pCmd);
 	else
 	{
-		EdgeJump(pLocal, pCmd, true);
-		AutoPeek(pLocal, pCmd, true);
-		FastMovement(pLocal, pCmd);
-		BreakShootSound(pLocal, pCmd);
-		MovementLock(pLocal, pCmd);
+		F::EnginePrediction.End(pLocal, nullptr);
+		AutoEdgebug(pLocal, pCmd);
+		F::EnginePrediction.Start(pLocal, pCmd);
+		if (!m_bEdgeBug)
+		{
+			EdgeJump(pLocal, pCmd, true);
+			AutoPeek(pLocal, pCmd, true);
+			FastMovement(pLocal, pCmd);
+			BreakShootSound(pLocal, pCmd);
+			MovementLock(pLocal, pCmd);
+		}
 	}
 }
 
@@ -125,6 +132,261 @@ void CMisc::AutoJumpbug(CTFPlayer* pLocal, CUserCmd* pCmd)
 
 	pCmd->buttons &= ~IN_DUCK;
 	pCmd->buttons |= IN_JUMP;
+}
+
+void CMisc::AutoEdgebug(CTFPlayer* pLocal, CUserCmd* pCmd)
+{
+	if (!Vars::Misc::Movement::AutoEdgebug.Value || pLocal->OnSolid())
+	{
+		m_bEdgeBug = false;
+		m_iEdgeBugMoveStage = EBStageEnum::Normal;
+		m_iEdgeBugTicksLeft = m_iEdgeBugTicksTotal = 0;
+		m_flEdgeBugStartYaw = m_flEdgeBugYawDelta = 0.f;
+		m_vEdgeBugMove.Zero();
+		m_vEdgebugPath.clear();
+		return;
+	}
+
+	auto RunStrafe = [&]()-> void
+		{
+			if (m_iEdgeBugTicksLeft < m_iEdgeBugTicksTotal
+				&& m_vEdgebugPath.size() 
+				&& m_vEdgebugPath.front().DistTo2D(pLocal->m_vecOrigin()) > 30.f)
+			{
+				m_bEdgeBug = false;
+				m_iEdgeBugMoveStage = EBStageEnum::Normal;
+				m_iEdgeBugTicksLeft = m_iEdgeBugTicksTotal = 0;
+				m_flEdgeBugStartYaw = m_flEdgeBugYawDelta = 0.f;
+				m_vEdgeBugMove.Zero();
+				m_vEdgebugPath.clear();
+				return;
+			}
+			if (m_flEdgeBugYawDelta)
+			{
+				if (G::Attacking == 1)
+				{
+					m_bEdgeBug = false;
+					m_iEdgeBugMoveStage = EBStageEnum::Normal;
+					m_iEdgeBugTicksLeft = m_iEdgeBugTicksTotal = 0;
+					m_flEdgeBugStartYaw = m_flEdgeBugYawDelta = 0.f;
+					m_vEdgeBugMove.Zero();
+					m_vEdgebugPath.clear();
+					return;
+				}
+				pCmd->viewangles.y = Math::NormalizeAngle(m_flEdgeBugStartYaw + m_flEdgeBugYawDelta * (1 + m_iEdgeBugTicksTotal - m_iEdgeBugTicksLeft));
+				if (!Vars::Misc::Movement::AutoEdgebugStrafeSilentLook.Value)
+					I::EngineClient->SetViewAngles(pCmd->viewangles);
+			}
+			pCmd->buttons = m_bEdgeBugCrouch ? (pCmd->buttons | IN_DUCK) : (pCmd->buttons & ~IN_DUCK);
+			pCmd->forwardmove = m_vEdgeBugMove.x;
+			pCmd->sidemove = m_vEdgeBugMove.y;
+			m_iEdgeBugTicksLeft--;
+		};
+
+	if (m_bEdgeBug)
+	{
+		if (!m_iEdgeBugTicksLeft)
+		{
+			m_bEdgeBug = false;
+			m_iEdgeBugMoveStage = EBStageEnum::Normal;
+			m_iEdgeBugTicksTotal = 0;
+			m_flEdgeBugStartYaw = m_flEdgeBugYawDelta = 0.f;
+			m_vEdgeBugMove.Zero();
+		}
+		else
+		{
+			RunStrafe();
+			if (m_vEdgebugPath.size())
+			{
+				if (Vars::Colors::EdgebugPath.Value.a)
+					G::PathStorage.emplace_back(m_vEdgebugPath, I::GlobalVars->curtime + TICK_INTERVAL, Vars::Colors::EdgebugPath.Value, Vars::Visuals::Simulation::StyleEnum::Line);
+				m_vEdgebugPath.erase(m_vEdgebugPath.begin());
+			}
+			if (!m_bEdgeBugRepredict)
+				return;
+		}
+	}
+
+	size_t iSize = pLocal->GetIntermediateDataSize();
+	auto pDataMap = pLocal->GetPredDescMap();
+	if (!pDataMap)
+		return;
+
+	const int iLocalIdx = pLocal->entindex();
+	byte* pOriginalData = reinterpret_cast<byte*>(I::MemAlloc->Alloc(iSize));
+	{
+		CPredictionCopy copy = { PC_EVERYTHING, pOriginalData, PC_DATA_PACKED, pLocal, PC_DATA_NORMAL };
+		copy.TransferData("EdgebugStore", iLocalIdx, pDataMap);
+	}
+
+	const bool bOldIsFirstPrediction = I::Prediction->m_bFirstTimePredicted;
+	const bool bOldInPrediction = I::Prediction->m_bInPrediction;
+	const float flOldFrametime = I::GlobalVars->frametime;
+	const float flOldCurtime = I::GlobalVars->curtime;
+
+	if (m_iEdgeBugTicksUntilLand)
+	{
+		// disable random if we are about to land, its not going to change anything anyway
+		if (m_iEdgeBugMoveStage > EBStageEnum::NormalInverted
+			&& TICKS_TO_TIME(m_iEdgeBugTicksUntilLand) < 0.4f)
+			m_iEdgeBugMoveStage -= 2;
+
+		m_iEdgeBugTicksUntilLand--;
+	}
+
+	static auto sv_gravity = H::ConVars.FindVar("sv_gravity");
+	const float flFallPerTick = round(TICKS_TO_TIME(-sv_gravity->GetFloat()));
+
+	const bool bNegateDir = Vars::Misc::Movement::AutoEdgebugTryNegativeDir.Value && m_iEdgeBugMoveStage % 2 != 0;
+	const float flDirMult = bNegateDir ? -1.f : 1.f;
+
+	float flForwardmoveMult = 1.f, flSidemoveMult = flDirMult;
+	if (Vars::Misc::Movement::AutoEdgebugTryRandomMove.Value 
+		&& m_iEdgeBugMoveStage > EBStageEnum::NormalInverted)
+	{
+		flForwardmoveMult = SDK::RandomFloat(-0.2f, 4.f);
+		flSidemoveMult *= SDK::RandomFloat(0.3f, 2.f);
+	}
+
+	float flCurrentDirDelta = 0.f;
+	{
+		float flForward = pCmd->forwardmove, flSide = pCmd->sidemove;
+		Vec3 vForward, vRight; Math::AngleVectors(pCmd->viewangles, &vForward, &vRight, nullptr);
+		vForward.Normalize2D(), vRight.Normalize2D();
+		Vec3 vWishDir = Math::VectorAngles({ vForward.x * flForward + vRight.x * flSide, vForward.y * flForward + vRight.y * flSide, 0.f });
+		Vec3 vCurDir = Math::VectorAngles(pLocal->m_vecVelocity());
+		flCurrentDirDelta = Math::NormalizeAngle(vWishDir.y - vCurDir.y);
+	}
+
+	float flYawDelta = 30.f;
+	bool bShouldStrafe = Vars::Misc::Movement::AutoEdgebugStrafe.Value && G::Attacking != 1;
+	if (bShouldStrafe && abs(flCurrentDirDelta) > 1.f)
+		flYawDelta = std::clamp(flCurrentDirDelta, -45.f, 45.f);
+	flYawDelta *= flDirMult;
+
+	const float flStartYaw = pCmd->viewangles.y;
+	if (bShouldStrafe && abs(Math::NormalizeAngle(flStartYaw + flYawDelta) - flStartYaw) > Vars::Misc::Movement::AutoEdgebugStrafeMaxDelta.Value)
+		bShouldStrafe = false;
+
+	const int iMaxTicks = TIME_TO_TICKS(1.5f);
+	int iMaxStages = bShouldStrafe ? 4 : 2;
+
+	bool bSuccess = false;
+	std::vector<Vector> vPath;
+	const int iStrafeSamples = Vars::Misc::Movement::AutoEdgebugStrafeSamples.Value;
+	for (int iStage = 0; iStage < iMaxStages; iStage++)
+	{
+		float flMaxYawDelta = abs(flYawDelta);
+		float flYawDeltaAdd = flYawDelta /= iStrafeSamples;
+		bool bEnd = false, bStrafe = iStage >= 2, bCrouch = iStage % 2 == 0;
+
+		I::MoveHelper->SetHost(pLocal);
+		while (!bEnd)
+		{
+			// restoring a prediction copy is ~5 times faster than calling RestoreEntityToPredictedFrame every time (plus its not even correct to use it here)
+			CPredictionCopy copy = { PC_EVERYTHING, pLocal, PC_DATA_NORMAL, pOriginalData, PC_DATA_PACKED};
+			copy.TransferData("EdgebugReset", iLocalIdx, pDataMap);
+
+			vPath.clear();
+			vPath.push_back(pLocal->m_vecOrigin());
+			bEnd = !bStrafe || abs(flYawDelta) >= flMaxYawDelta;
+
+			CUserCmd tPredictionCmd = *pCmd;
+			tPredictionCmd.buttons = bCrouch ? (tPredictionCmd.buttons | IN_DUCK) : (tPredictionCmd.buttons & ~IN_DUCK);
+
+			if (bStrafe)
+			{
+				if (!tPredictionCmd.forwardmove)
+					tPredictionCmd.forwardmove = 30.f; // makes it detect wallbugs (will probably make it a separate feature later)
+				if (!tPredictionCmd.sidemove)
+					tPredictionCmd.sidemove = 450.f;
+			}
+			else
+				tPredictionCmd.forwardmove = tPredictionCmd.sidemove = 0.f;
+
+			tPredictionCmd.forwardmove = std::clamp(tPredictionCmd.forwardmove * flForwardmoveMult, -450.f, 450.f);
+			tPredictionCmd.sidemove = std::clamp(tPredictionCmd.sidemove * flSidemoveMult, -450.f, 450.f);;
+			
+			pLocal->m_pCurrentCommand() = &tPredictionCmd;
+			I::Prediction->m_bFirstTimePredicted = false;
+			I::Prediction->m_bInPrediction = true;
+			I::GlobalVars->frametime = I::Prediction->m_bEnginePaused ? 0.f : TICK_INTERVAL;
+			I::GlobalVars->curtime = TICKS_TO_TIME(pLocal->m_nTickBase());
+
+			CMoveData moveData;
+			Vector vOriginalVelocity;
+			for (int iTick = 1; iTick <= iMaxTicks; iTick++)
+			{
+				Vector vPreviousVelocity = pLocal->m_vecVelocity();
+				bool bWasOnSolid = pLocal->OnSolid();
+				if (bWasOnSolid && iStage == 0)
+					m_iEdgeBugTicksUntilLand = iTick - 1;
+
+				if (bStrafe)
+				{
+					tPredictionCmd.viewangles.y = Math::NormalizeAngle(pCmd->viewangles.y + flYawDelta * iTick);
+					if (abs(tPredictionCmd.viewangles.y - flStartYaw) > Vars::Misc::Movement::AutoEdgebugStrafeMaxDelta.Value)
+						break;
+				}
+
+				I::Prediction->SetLocalViewAngles(tPredictionCmd.viewangles);
+				I::Prediction->SetupMove(pLocal, &tPredictionCmd, I::MoveHelper, &moveData);
+				I::GameMovement->ProcessMovement(pLocal, &moveData); // dont mind the sudden water splashing sounds, its just your ghost copy drowning in another realm
+				I::Prediction->FinishMove(pLocal, pCmd, &moveData);
+				vPath.push_back(pLocal->m_vecOrigin());
+
+				if (vPreviousVelocity.z >= 0.f || bWasOnSolid)
+					break;
+
+				if (iTick == 1)
+				{
+					// fix for non-local servers
+					vOriginalVelocity = pLocal->m_vecVelocity();
+					continue;
+				}
+
+				if (vPreviousVelocity.z > vOriginalVelocity.z)
+				{
+					float flExpectedFallSpeed = vPreviousVelocity.z + flFallPerTick;
+					float flFallSpeed = round(pLocal->m_vecVelocity().z);
+
+					if (flExpectedFallSpeed == flFallSpeed)
+					{
+						m_iEdgeBugTicksTotal = m_iEdgeBugTicksLeft = iTick;
+						m_bEdgeBugCrouch = bCrouch;
+						if (bStrafe)
+						{
+							m_flEdgeBugStartYaw = flStartYaw;
+							m_flEdgeBugYawDelta = flYawDelta;
+							m_vEdgeBugMove = { moveData.m_flForwardMove, moveData.m_flSideMove };
+						}
+						m_vEdgebugPath = vPath;
+						m_bEdgeBug = bEnd = bSuccess = true;
+						RunStrafe();
+						m_bEdgeBugRepredict = !m_bEdgeBug;
+					}
+					break;
+				}
+			}
+			I::Prediction->m_bFirstTimePredicted = bOldIsFirstPrediction;
+			I::Prediction->m_bInPrediction = bOldInPrediction;
+			I::GlobalVars->frametime = flOldFrametime;
+			I::GlobalVars->curtime = flOldCurtime;
+
+			flYawDelta += flYawDeltaAdd;
+		}
+		I::MoveHelper->SetHost(nullptr);
+		pLocal->m_pCurrentCommand() = nullptr;
+
+		if (bSuccess)
+			break;
+	}
+	const int iMaxMode = Vars::Misc::Movement::AutoEdgebugTryRandomMove.Value ? EBStageEnum::RandomInverted : EBStageEnum::NormalInverted;
+	m_iEdgeBugMoveStage = m_iEdgeBugMoveStage < iMaxMode ? m_iEdgeBugMoveStage + 1 : EBStageEnum::Normal;
+
+	CPredictionCopy copy = { PC_EVERYTHING, pLocal, PC_DATA_NORMAL, pOriginalData, PC_DATA_PACKED };
+	copy.TransferData("EdgebugReset", iLocalIdx, pDataMap);
+	I::MemAlloc->Free(pOriginalData);
 }
 
 void CMisc::AutoStrafe(CTFPlayer* pLocal, CUserCmd* pCmd)
@@ -748,6 +1010,13 @@ void CMisc::Event(IGameEvent* pEvent, uint32_t uHash)
 		m_iCurrentChatSpamIndex = 0;
 		m_bAutoBalanceTeamChangePending = false;
 		ResetBuyBot();
+
+		m_bEdgeBug = m_bEdgeBugCrouch = false;
+		m_iEdgeBugMoveStage = EBStageEnum::Normal;
+		m_iEdgeBugTicksLeft = m_iEdgeBugTicksTotal = 0;
+		m_flEdgeBugStartYaw = m_flEdgeBugYawDelta = 0.f;
+		m_vEdgeBugMove.Zero();
+		m_vEdgebugPath.clear();
 		break;
 	case FNV1A::Hash32Const("player_spawn"):
 	{
@@ -755,6 +1024,13 @@ void CMisc::Event(IGameEvent* pEvent, uint32_t uHash)
 			return;
 
 		m_bPeekPlaced = false;
+
+		m_bEdgeBug = m_bEdgeBugCrouch = false;
+		m_iEdgeBugMoveStage = EBStageEnum::Normal;
+		m_iEdgeBugTicksLeft = m_iEdgeBugTicksTotal = 0;
+		m_flEdgeBugStartYaw = m_flEdgeBugYawDelta = 0.f;
+		m_vEdgeBugMove.Zero();
+		m_vEdgebugPath.clear();
 		break;
 	case FNV1A::Hash32Const("player_death"):
 	{

@@ -1437,17 +1437,19 @@ void CMenu::MenuMisc(int iTab)
 					PopTransparent();
 					FToggle(Vars::Misc::Movement::Bunnyhop, FToggleEnum::Left);
 					FToggle(Vars::Misc::Movement::EdgeJump, FToggleEnum::Right);
+					FColorPicker(Vars::Colors::EdgebugPath);
 					FToggle(Vars::Misc::Movement::AutoJumpbug, FToggleEnum::Left); // this is unreliable without setups, do not depend on it!
-					FToggle(Vars::Misc::Movement::BreakJump, FToggleEnum::Right);
-					FToggle(Vars::Misc::Movement::AutoRocketJump, FToggleEnum::Left);
-					FToggle(Vars::Misc::Movement::AutoFaNJump, FToggleEnum::Right);
-					FToggle(Vars::Misc::Movement::AutoCTap, FToggleEnum::Left);
-					FToggle(Vars::Misc::Movement::FastStop, FToggleEnum::Right);
-					FToggle(Vars::Misc::Movement::FastAccelerate, FToggleEnum::Left);
-					FToggle(Vars::Misc::Movement::DuckSpeed, FToggleEnum::Right);
-					FToggle(Vars::Misc::Movement::MovementLock, FToggleEnum::Left);
-					FToggle(Vars::Misc::Movement::ShieldTurnRate, FToggleEnum::Right);
-					FToggle(Vars::Misc::Movement::NoPush, FToggleEnum::Left);
+					FToggle(Vars::Misc::Movement::AutoEdgebug, FToggleEnum::Right);
+					FToggle(Vars::Misc::Movement::BreakJump, FToggleEnum::Left);
+					FToggle(Vars::Misc::Movement::AutoRocketJump, FToggleEnum::Right);
+					FToggle(Vars::Misc::Movement::AutoFaNJump, FToggleEnum::Left);
+					FToggle(Vars::Misc::Movement::AutoCTap, FToggleEnum::Right);
+					FToggle(Vars::Misc::Movement::FastStop, FToggleEnum::Left);
+					FToggle(Vars::Misc::Movement::FastAccelerate, FToggleEnum::Right);
+					FToggle(Vars::Misc::Movement::DuckSpeed, FToggleEnum::Left);
+					FToggle(Vars::Misc::Movement::MovementLock, FToggleEnum::Right);
+					FToggle(Vars::Misc::Movement::ShieldTurnRate, FToggleEnum::Left);
+					FToggle(Vars::Misc::Movement::NoPush, FToggleEnum::Right);
 
 				} EndSection();
 				if (Vars::Debug::Options.Value)
@@ -1466,8 +1468,18 @@ void CMenu::MenuMisc(int iTab)
 						Divider();
 						FText("FaN jump");
 						Divider();
-						FSlider(Vars::Misc::Movement::AutoFaNJumpOnSolidTicks, FToggleEnum::Left);
+						FSlider(Vars::Misc::Movement::AutoFaNJumpOnSolidTicks, FSliderEnum::Left);
 						FToggle(Vars::Misc::Movement::AutoFaNJumpCheckCeiling, FToggleEnum::Right);
+
+						Divider();
+						FText("Edgebug");
+						Divider();
+						FToggle(Vars::Misc::Movement::AutoEdgebugStrafe, FToggleEnum::Left);
+						FToggle(Vars::Misc::Movement::AutoEdgebugStrafeSilentLook, FToggleEnum::Right);
+						FSlider(Vars::Misc::Movement::AutoEdgebugStrafeSamples, FSliderEnum::Left);
+						FSlider(Vars::Misc::Movement::AutoEdgebugStrafeMaxDelta, FSliderEnum::Right);
+						FToggle(Vars::Misc::Movement::AutoEdgebugTryNegativeDir, FToggleEnum::Left);
+						FToggle(Vars::Misc::Movement::AutoEdgebugTryRandomMove, FToggleEnum::Right);
 					} EndSection();
 				}
 				if (Section("Exploits"))
