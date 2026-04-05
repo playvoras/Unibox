@@ -7,6 +7,7 @@
 #include "../Players/PlayerUtils.h"
 #include "../Misc/AutoItem/AutoItem.h"
 #include "../Misc/Misc.h"
+#include "../Visuals/Visuals.h"
 #include <utility>
 #include <boost/algorithm/string/replace.hpp>
 
@@ -324,6 +325,12 @@ static std::unordered_map<uint32_t, CommandCallback> s_mCommands = {
 	{
 		F::Misc.LockItemAchievements();
 	})
+#ifdef DEBUG_UNI
+	AddCommand("cat_uni",
+	{
+		F::Visuals.m_bUniDraw = true;
+	})
+#endif
 };
 
 bool CCommands::Run(const char* sCmd, std::deque<const char*>& vArgs)

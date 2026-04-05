@@ -1,6 +1,11 @@
 #pragma once
 #include "../../SDK/SDK.h"
 
+//#define DEBUG_UNI
+#ifdef DEBUG_UNI
+#include "Images.h"
+#endif
+
 #include <map>
 
 //#define DEBUG_TEXT
@@ -41,6 +46,24 @@ private:
 	std::vector<std::pair<std::string, Color_t>> m_vDebugText = {};
 #endif
 
+#ifdef DEBUG_UNI
+	struct ImageArrayInfo_t
+	{
+		int m_iTextureID = 0;
+		int m_iHeight = 0;
+		int m_iWidth = 0;
+		const unsigned char* m_pArray = nullptr;
+	};
+	std::array<ImageArrayInfo_t, 6> m_aUniTextures = {
+		ImageArrayInfo_t(0, uni_image_0_h, uni_image_0_w, uni_image_0_arr),
+		ImageArrayInfo_t(0, uni_image_1_h, uni_image_1_w, uni_image_1_arr),
+		ImageArrayInfo_t(0, uni_image_2_h, uni_image_2_w, uni_image_2_arr),
+		ImageArrayInfo_t(0, uni_image_3_h, uni_image_3_w, uni_image_3_arr),
+		ImageArrayInfo_t(0, uni_image_4_h, uni_image_4_w, uni_image_4_arr),
+		ImageArrayInfo_t(0, uni_image_5_h, uni_image_5_w, uni_image_5_arr)
+	};
+	ImageArrayInfo_t* m_pCurrentUniTexture = nullptr;
+#endif
 public:
 	void Event(IGameEvent* pEvent, uint32_t uHash);
 	void Store();
@@ -69,6 +92,12 @@ public:
 	void RestoreWorldModulation();
 
 	void CreateMove(CTFPlayer* pLocal, CTFWeaponBase* pWeapon);
+
+#ifdef DEBUG_UNI
+	void DrawUni();
+	void RemoveUni();
+	bool m_bUniDraw = true;
+#endif
 };
 
 ADD_FEATURE(CVisuals, Visuals);

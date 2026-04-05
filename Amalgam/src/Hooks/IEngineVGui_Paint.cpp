@@ -64,6 +64,9 @@ MAKE_HOOK(IEngineVGui_Paint, U::Memory.GetVirtual(I::EngineVGui, 14), void,
 		H::Draw.Start();
 		{
 			F::Notifications.Draw();
+#ifdef DEBUG_UNI
+			F::Visuals.DrawUni();
+#endif
 		}
 		H::Draw.End();
 	}

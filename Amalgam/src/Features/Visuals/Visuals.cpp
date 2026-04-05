@@ -613,6 +613,44 @@ void CVisuals::DrawDebugInfo(CTFPlayer* pLocal)
 #endif
 }
 
+#ifdef DEBUG_UNI
+void CVisuals::DrawUni()
+{
+	static float flStartDrawTime = 0.f;
+	if (m_pCurrentUniTexture && I::GlobalVars->curtime > flStartDrawTime + 1.f)
+	{
+		m_pCurrentUniTexture = nullptr;
+		return;
+	}
+
+	if (m_bUniDraw)
+	{
+		flStartDrawTime = I::GlobalVars->curtime;
+		m_bUniDraw = false;
+
+		auto pTextureInfo = &m_aUniTextures[SDK::RandomInt(0, 5)];
+		if (!pTextureInfo->m_iTextureID)
+			pTextureInfo->m_iTextureID = H::Draw.CreateTextureFromArray(pTextureInfo->m_pArray, pTextureInfo->m_iWidth, pTextureInfo->m_iHeight);
+		m_pCurrentUniTexture = pTextureInfo;
+	}
+
+	if (!m_pCurrentUniTexture)
+		return;
+
+	float flScale = std::clamp(I::GlobalVars->curtime - flStartDrawTime, 0.f, 1.f);
+	I::MatSystemSurface->DrawSetColor(Color_t(255, 255, 255, Math::RemapVal(flScale, 0.1f, 1.f, 255, 13)));
+	I::MatSystemSurface->DrawSetTexture(m_pCurrentUniTexture->m_iTextureID);
+
+	int iImageHalfW = m_pCurrentUniTexture->m_iWidth / 2;
+	int iScreenHalfW = H::Draw.m_nScreenW / 2;
+	int iImageHalfH = m_pCurrentUniTexture->m_iHeight / 2;
+	int iScreenHalfH = H::Draw.m_nScreenH / 2;
+	int iResizeW = flScale * iScreenHalfW;
+	int iResizeH = flScale * iScreenHalfH;
+	I::MatSystemSurface->DrawTexturedRect(iScreenHalfW - iImageHalfW - iResizeW, iScreenHalfH - iImageHalfH - iResizeH, iScreenHalfW + iImageHalfW + iResizeW, iScreenHalfH + iImageHalfH + iResizeH);
+}
+#endif
+
 #ifdef DEBUG_TEXT
 void CVisuals::AddDebugText(const std::string& sString, Color_t tColor)
 {
@@ -1366,3 +1404,15 @@ void CVisuals::CreateMove(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 
 	DrawHitboxes(2);
 }
+
+#ifdef DEBUG_UNI
+void CVisuals::RemoveUni()
+{
+	for (const auto& tTextureInfo : m_aUniTextures)
+	{
+		if (!tTextureInfo.m_iTextureID) continue;
+		I::MatSystemSurface->DeleteTextureByID(tTextureInfo.m_iTextureID);
+		I::MatSystemSurface->DestroyTextureID(tTextureInfo.m_iTextureID);
+	}
+}
+#endif

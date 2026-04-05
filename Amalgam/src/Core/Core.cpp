@@ -211,7 +211,9 @@ void CCore::Unload()
 	H::ConVars.FindVar("cl_wpn_sway_scale")->SetValue(0.f);
 
 	Sleep(250);
-
+#ifdef DEBUG_UNI
+	F::Visuals.RemoveUni();
+#endif
 	F::EnginePrediction.Unload();
 	H::ConVars.Restore();
 	F::Materials.UnloadMaterials();
