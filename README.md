@@ -52,7 +52,7 @@
   - Namedpipe
     - Implements communication with [neptune botpanel](https://github.com/mlemlody/neptune)
     - Sends client info such as localplayer's health, class, server name and map name
-  - Textmode builds ([TextModeTF2](https://github.com/GatoPotato658/TextmodeTF2) compatibility)
+  - Textmode builds ([TextModeTF2](https://github.com/mlemlody/TextmodeTF2) compatibility)
     - Disables game visuals to decrease CPU usage
     - Enables `Namedpipe`
     - Enables some additional hooks to avoid crashes (currently WIP)
