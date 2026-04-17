@@ -1,5 +1,13 @@
 #include "PLController.h"
 
+namespace
+{
+	int GetPayloadTeamIndex(int iTeam)
+	{
+		return iTeam - TF_TEAM_RED;
+	}
+}
+
 void CPLController::Init()
 {
 	// Reset entries
@@ -27,7 +35,7 @@ void CPLController::Update()
 				continue;
 
 			// Add new entry for the team
-			m_aPayloads.at(iTeam - TF_TEAM_RED).push_back(pPayload->As<CObjectCartDispenser>());
+			m_aPayloads.at(GetPayloadTeamIndex(iTeam)).push_back(pPayload->As<CObjectCartDispenser>());
 		}
 	}
 }
@@ -42,7 +50,7 @@ CObjectCartDispenser* CPLController::GetClosestPayload(Vector vPos, int iTeam)
 	CObjectCartDispenser* pBestEnt = nullptr;
 
 	// Find best payload
-	for (auto pEntity : m_aPayloads[iTeam - TF_TEAM_RED])
+	for (auto pEntity : m_aPayloads[GetPayloadTeamIndex(iTeam)])
 	{
 		if (pEntity->GetClassID() != ETFClassID::CObjectCartDispenser || pEntity->IsDormant())
 			continue;

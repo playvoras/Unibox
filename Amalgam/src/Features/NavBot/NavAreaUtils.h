@@ -1,15 +1,15 @@
 #pragma once
 
+#include "../../SDK/Definitions/Types.h"
 #include <utility>
 
 class CNavArea;
-class Vector;
 
 namespace NavAreaUtils
 {
 	auto FindClosestHidingSpot(
 		CNavArea* pArea,
-		Vector vVischeckPoint,
+		const Vector& vVischeckPoint,
 		int iRecursionCount,
 		std::pair<CNavArea*, int>& tOut,
 		bool bVischeck = true,

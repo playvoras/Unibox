@@ -97,6 +97,8 @@ private:
 	const std::vector<CachedCrumb_t>* FindConnectionCacheEntry(CNavArea* pArea, CNavArea* pNextArea) const;
 	void AppendCachedCrumbs(CNavArea* pArea, const std::vector<CachedCrumb_t>& vCachedCrumbs);
 	void ConsumeFrontCrumbs(size_t nCount);
+	void ClearPathState();
+	void ClearDebugPaths();
 
 	// Use when something unexpected happens, e.g. vischeck fails
 	void AbandonPath(const std::string& sReason);

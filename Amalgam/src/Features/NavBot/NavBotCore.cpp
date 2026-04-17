@@ -1,14 +1,17 @@
+#include "NavBotCore.h"
+
 #include "DangerManager/DangerManager.h"
-#include "NavEngine/NavEngine.h"
 #include "NavAreaUtils.h"
-#include "NavBotConfig.h"
-#include "NavBotDebug.h"
+#include "NavEngine/NavEngine.h"
+#include "NavBotJobs/Engineer.h"
+#include "NavBotJobs/Reload.h"
+#include "NavBotJobs/StayNear.h"
 #include "NavRuntime.h"
 #include "../FollowBot/FollowBot.h"
-#include "../PacketManip/FakeLag/FakeLag.h"
 #include "../CritHack/CritHack.h"
-#include "../Ticks/Ticks.h"
 #include "../Misc/Misc.h"
+#include "../PacketManip/FakeLag/FakeLag.h"
+#include "../Ticks/Ticks.h"
 
 
 void CNavBotCore::UpdateSlot(CTFPlayer* pLocal, ClosestEnemy_t tClosestEnemy)
@@ -66,6 +69,31 @@ void CNavBotCore::UpdateSlot(CTFPlayer* pLocal, ClosestEnemy_t tClosestEnemy)
 		F::BotUtils.SetSlot(pLocal, iDesiredSlot);
 }
 
+void CNavBotCore::UpdateRunReloadInput(CUserCmd* pCmd, bool bShouldHold)
+{
+	if (!pCmd)
+	{
+		m_bHoldingRunReload = bShouldHold;
+		return;
+	}
+
+	if (bShouldHold)
+		pCmd->buttons |= IN_RELOAD;
+	else if (m_bHoldingRunReload)
+		pCmd->buttons &= ~IN_RELOAD;
+
+	m_bHoldingRunReload = bShouldHold;
+}
+
+void CNavBotCore::ResetRuntimeState(CUserCmd* pCmd)
+{
+	F::NavBotStayNear.m_iStayNearTargetIdx = -1;
+	F::NavBotReload.m_iLastReloadSlot = -1;
+	m_tIdleTimer.Update();
+	m_tAntiStuckTimer.Update();
+	UpdateRunReloadInput(pCmd, false);
+}
+
 static bool IsWeaponValidForDT(CTFWeaponBase* pWeapon)
 {
 	if (!pWeapon || F::BotUtils.m_iCurrentSlot == SLOT_MELEE)
@@ -80,32 +108,10 @@ static bool IsWeaponValidForDT(CTFWeaponBase* pWeapon)
 
 void CNavBotCore::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 {
-	auto UpdateRunReloadInput = [&](bool bShouldHold)
-		{
-			if (!pCmd)
-				return;
-
-			if (bShouldHold)
-				pCmd->buttons |= IN_RELOAD;
-			else if (m_bHoldingRunReload)
-				pCmd->buttons &= ~IN_RELOAD;
-
-			m_bHoldingRunReload = bShouldHold;
-		};
-
-	auto ResetNavBot = [&]()
-		{
-			F::NavBotStayNear.m_iStayNearTargetIdx = -1;
-			F::NavBotReload.m_iLastReloadSlot = -1;
-			m_tIdleTimer.Update();
-			m_tAntiStuckTimer.Update();
-			UpdateRunReloadInput(false);
-		};
-
 	if (!Vars::Misc::Movement::NavBot::Enabled.Value || !Vars::Misc::Movement::NavEngine::Enabled.Value ||
 		!pLocal->IsAlive() || F::NavEngine.m_eCurrentPriority == PriorityListEnum::Followbot || F::FollowBot.m_bActive || !F::NavEngine.IsReady())
 	{
-		ResetNavBot();
+		ResetRuntimeState(pCmd);
 		return;
 	}
 
@@ -114,7 +120,7 @@ void CNavBotCore::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 		if (F::NavEngine.IsPathing())
 			F::NavEngine.CancelPath();
 		
-		ResetNavBot();
+		ResetRuntimeState(pCmd);
 		return;
 	}
 
@@ -138,20 +144,20 @@ void CNavBotCore::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 
 	if (F::Ticks.m_bWarp || F::Ticks.m_bDoubletap)
 	{
-		ResetNavBot();
+		ResetRuntimeState(pCmd);
 		return;
 	}
 
 	if (!pWeapon)
 	{
-		ResetNavBot();
+		ResetRuntimeState(pCmd);
 		return;
 	}
 
 	if (pCmd->buttons & (IN_FORWARD | IN_BACK | IN_MOVERIGHT | IN_MOVELEFT) && !F::Misc.m_bAntiAFK)
 	{
 		m_vStuckAngles = pCmd->viewangles;
-		ResetNavBot();
+		ResetRuntimeState(pCmd);
 		return;
 	}
 
@@ -170,7 +176,7 @@ void CNavBotCore::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 		}
 
 		F::NavBotEngineer.Reset();
-		ResetNavBot();
+		ResetRuntimeState(pCmd);
 		return;
 	}
 
@@ -179,7 +185,7 @@ void CNavBotCore::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 	{
 		// This should never happen.
 		// In case it did then theres something wrong with nav engine
-		ResetNavBot();
+		ResetRuntimeState(pCmd);
 		return;
 	}
 
@@ -220,7 +226,7 @@ void CNavBotCore::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 	if (bShouldHoldReload && F::NavBotReload.m_iLastReloadSlot != -1 && F::BotUtils.m_iCurrentSlot != F::NavBotReload.m_iLastReloadSlot)
 		bShouldHoldReload = false;
 
-	UpdateRunReloadInput(bShouldHoldReload);
+	UpdateRunReloadInput(pCmd, bShouldHoldReload);
 
 	if (tJobResult.m_bHasJob)
 	{

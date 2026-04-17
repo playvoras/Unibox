@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../NavEngine/NavEngine.h"
 #include "../BotUtils.h"
 
 struct NavAreaScore_t

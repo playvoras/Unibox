@@ -9,6 +9,45 @@
 #include "../NavEngine/Controllers/Controller.h"
 #include "../../Misc/NamedPipe/NamedPipe.h"
 
+namespace
+{
+	auto FindClosestWorldFlag(const Vector& vLocalOrigin) -> CCaptureFlag*
+	{
+		CCaptureFlag* pBestFlag = nullptr;
+		float flBestDist = FLT_MAX;
+		for (auto pEntity : H::Entities.GetGroup(EntityEnum::WorldObjective))
+		{
+			if (pEntity->GetClassID() != ETFClassID::CCaptureFlag)
+				continue;
+
+			auto pFlag = pEntity->As<CCaptureFlag>();
+			const float flDist = vLocalOrigin.DistToSqr(pFlag->GetAbsOrigin());
+			if (flDist >= flBestDist)
+				continue;
+
+			flBestDist = flDist;
+			pBestFlag = pFlag;
+		}
+
+		return pBestFlag;
+	}
+
+	auto AdjustCaptureCandidateToNav(Vector vCandidate) -> Vector
+	{
+		if (!F::NavEngine.IsNavMeshLoaded())
+			return vCandidate;
+
+		if (auto pArea = F::NavEngine.FindClosestNavArea(vCandidate))
+		{
+			Vector vCorrected = pArea->GetNearestPoint(vCandidate.Get2D());
+			vCorrected.z = pArea->m_vCenter.z;
+			return vCorrected;
+		}
+
+		return vCandidate;
+	}
+}
+
 bool CNavBotCapture::ShouldAvoidPlayer(int iIndex)
 {
 #ifdef TEXTMODE
@@ -31,22 +70,7 @@ bool CNavBotCapture::GetCtfGoal(CTFPlayer* pLocal, int iOurTeam, int iEnemyTeam,
 				m_sCaptureStatus = F::HaarpController.m_sHaarpStatus;
 				return true;
 			}
-			CCaptureFlag* pBestFlag = nullptr;
-			float flBestDist = FLT_MAX;
-			Vector vLocalOrigin = pLocal->GetAbsOrigin();
-			for (auto pEntity : H::Entities.GetGroup(EntityEnum::WorldObjective))
-			{
-				if (pEntity->GetClassID() != ETFClassID::CCaptureFlag)
-					continue;
-				auto pFlag = pEntity->As<CCaptureFlag>();
-				Vector vPos = pFlag->GetAbsOrigin();
-				float flDist = vLocalOrigin.DistToSqr(vPos);
-				if (flDist < flBestDist)
-				{
-					flBestDist = flDist;
-					pBestFlag = pFlag;
-				}
-			}
+			auto pBestFlag = FindClosestWorldFlag(pLocal->GetAbsOrigin());
 			if (pBestFlag)
 			{
 				m_sCaptureStatus = L"Flag";
@@ -263,20 +287,6 @@ bool CNavBotCapture::GetControlPointGoal(const Vector vLocalOrigin, int iOurTeam
 			const float flBaseRadius = iSlots == 1 ? 0.0f : std::min(flCapRadius - 12.0f, 45.0f + 12.0f * static_cast<float>(iSlots - 1));
 			const int iPreferredSlot = iSlots > 0 ? (iLocalIndex % iSlots) : 0;
 
-			auto AdjustToNav = [&](Vector vCandidate)
-				{
-					if (F::NavEngine.IsNavMeshLoaded())
-					{
-						if (auto pArea = F::NavEngine.FindClosestNavArea(vCandidate))
-						{
-							Vector vCorrected = pArea->GetNearestPoint(vCandidate.Get2D());
-							vCorrected.z = pArea->m_vCenter.z;
-							vCandidate = vCorrected;
-						}
-					}
-					return vCandidate;
-				};
-
 			std::vector<Vector> vFallbackCandidates;
 			vFallbackCandidates.reserve(iSlots + 12);
 
@@ -293,7 +303,7 @@ bool CNavBotCapture::GetControlPointGoal(const Vector vLocalOrigin, int iOurTeam
 					vCandidate.y += sin(flAngle) * flBaseRadius;
 				}
 
-				vCandidate = AdjustToNav(vCandidate);
+				vCandidate = AdjustCaptureCandidateToNav(vCandidate);
 				vFallbackCandidates.push_back(vCandidate);
 
 				if (!SpotTakenByOther(vCandidate))
@@ -319,7 +329,7 @@ bool CNavBotCapture::GetControlPointGoal(const Vector vLocalOrigin, int iOurTeam
 							vCandidate.y += sin(flAngle) * flRingRadius;
 						}
 
-						vCandidate = AdjustToNav(vCandidate);
+						vCandidate = AdjustCaptureCandidateToNav(vCandidate);
 						vFallbackCandidates.push_back(vCandidate);
 
 						if (!SpotTakenByOther(vCandidate))
@@ -335,7 +345,7 @@ bool CNavBotCapture::GetControlPointGoal(const Vector vLocalOrigin, int iOurTeam
 
 			if (!m_vCurrentCaptureSpot)
 			{
-				vFallbackCandidates.push_back(AdjustToNav(vPosition));
+				vFallbackCandidates.push_back(AdjustCaptureCandidateToNav(vPosition));
 
 				Vector vBestCandidate = vPosition;
 				float flBestScore = -1.0f;

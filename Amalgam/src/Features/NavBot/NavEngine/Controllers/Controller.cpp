@@ -4,11 +4,29 @@
 #include "PLController/PLController.h"
 #include "HaarpController/HaarpController.h"
 #include "DoomsdayController/DoomsdayController.h"
+#include <string_view>
+
+namespace
+{
+	auto GetNormalizedLevelName() -> std::string
+	{
+		auto sMapName = std::string(I::EngineClient->GetLevelName());
+		size_t nLastSlash = sMapName.find_last_of("/\\");
+		if (nLastSlash != std::string::npos)
+			sMapName = sMapName.substr(nLastSlash + 1);
+		return sMapName;
+	}
+
+	bool MapStartsWith(const std::string& sMapName, std::string_view sPrefix)
+	{
+		return sMapName.find(sPrefix) == 0;
+	}
+}
 
 ETFGameType GetGameType()
 {
 	// Check if we're on doomsday
-	auto sMapName = std::string(I::EngineClient->GetLevelName());
+	auto sMapName = GetNormalizedLevelName();
 	F::GameObjectiveController.m_bDoomsday = sMapName.find("sd_doomsday") != std::string::npos;
 	F::GameObjectiveController.m_bHaarp = sMapName.find("ctf_haarp") != std::string::npos;
 
@@ -28,36 +46,33 @@ void CGameObjectiveController::Update()
 		flNextGameTypeRefresh = I::GlobalVars->curtime + 1.0f;
 	}
 
-	auto sMapName = std::string(I::EngineClient->GetLevelName());
-	size_t nLastSlash = sMapName.find_last_of("/\\");
-	if (nLastSlash != std::string::npos)
-		sMapName = sMapName.substr(nLastSlash + 1);
+	const auto sMapName = GetNormalizedLevelName();
 
-	if (sMapName.find("cppl_") == 0)
+	if (MapStartsWith(sMapName, "cppl_"))
 	{
 		F::CPController.Update();
 		F::PLController.Update();
 		return;
 	}
-	if (sMapName.find("vsh_") == 0 || sMapName.find("2koth_") == 0 || sMapName.find("koth_") == 0 || sMapName.find("cp_") == 0 || sMapName.find("tc_") == 0)
+	if (MapStartsWith(sMapName, "vsh_") || MapStartsWith(sMapName, "2koth_") || MapStartsWith(sMapName, "koth_") || MapStartsWith(sMapName, "cp_") || MapStartsWith(sMapName, "tc_"))
 	{
 		F::CPController.Update();
 		return;
 	}
-	if (sMapName.find("pl_") == 0 || sMapName.find("plr_") == 0)
+	if (MapStartsWith(sMapName, "pl_") || MapStartsWith(sMapName, "plr_"))
 	{
 		F::PLController.Update();
 		return;
 	}
-	if (sMapName.find("ctf_") == 0 || sMapName.find("sd_") == 0 || sMapName.find("rd_") == 0 || sMapName.find("pd_") == 0)
+	if (MapStartsWith(sMapName, "ctf_") || MapStartsWith(sMapName, "sd_") || MapStartsWith(sMapName, "rd_") || MapStartsWith(sMapName, "pd_"))
 	{
 		F::FlagController.Update();
-		if (sMapName.find("sd_doomsday") == 0)
+		if (MapStartsWith(sMapName, "sd_doomsday"))
 		{
 			F::CPController.Update();
 			F::DoomsdayController.Update();
 		}
-		if (sMapName.find("ctf_haarp") == 0)
+		if (MapStartsWith(sMapName, "ctf_haarp"))
 		{
 			F::CPController.Update();
 			F::HaarpController.Update();

@@ -2,6 +2,19 @@
 #include "../../Misc/NamedPipe/NamedPipe.h"
 #include "../NavEngine/NavEngine.h"
 
+namespace
+{
+	Vector NormalizePlanar(Vector vDirection)
+	{
+		vDirection.z = 0.f;
+		const float flLength = vDirection.Length();
+		if (flLength <= 0.001f)
+			return {};
+
+		return vDirection / flLength;
+	}
+}
+
 bool CNavBotGroup::GetFormationOffset(CTFPlayer* pLocal, int iPositionIndex, Vector& vOut)
 {
 	if (iPositionIndex <= 0)
@@ -27,25 +40,10 @@ bool CNavBotGroup::GetFormationOffset(CTFPlayer* pLocal, int iPositionIndex, Vec
 		Math::AngleVectors(viewAngles, &vDirection);
 	}
 
-	vDirection.z = 0; // Ignore vertical component
-	float length = vDirection.Length();
-	if (length > 0.001f)
-	{
-		vDirection.x /= length;
-		vDirection.y /= length;
-		vDirection.z /= length;
-	}
+	vDirection = NormalizePlanar(vDirection);
 
 	// Calculate cross product for perpendicular direction (for side-by-side formations)
-	Vector vRight = vDirection.Cross(Vector(0, 0, 1));
-	// Normalize right vector
-	length = vRight.Length();
-	if (length > 0.001f)
-	{
-		vRight.x /= length;
-		vRight.y /= length;
-		vRight.z /= length;
-	}
+	[[maybe_unused]] const Vector vRight = NormalizePlanar(vDirection.Cross(Vector(0, 0, 1)));
 
 	// Different formation styles:
 	// 1. Line formation (bots following one after another)

@@ -1,6 +1,33 @@
 #include "GetSupplies.h"
 #include "../NavEngine/NavEngine.h"
 
+namespace
+{
+	void SortSuppliesByDistance(std::vector<SupplyData_t>& vSupplies, const Vector& vLocalOrigin)
+	{
+		std::sort(vSupplies.begin(), vSupplies.end(), [&](const SupplyData_t& a, const SupplyData_t& b) -> bool
+			{
+				return a.m_vOrigin.DistTo(vLocalOrigin) < b.m_vOrigin.DistTo(vLocalOrigin);
+			});
+	}
+
+	auto GetSupplyPriority(int iFlags) -> PriorityListEnum::PriorityListEnum
+	{
+		if (iFlags & GetSupplyEnum::Health)
+			return iFlags & GetSupplyEnum::LowPrio ? PriorityListEnum::LowPrioGetHealth : PriorityListEnum::GetHealth;
+
+		return PriorityListEnum::GetAmmo;
+	}
+
+	auto BuildRememberedDispenser(const Vector& vOrigin) -> SupplyData_t
+	{
+		SupplyData_t tRemembered{};
+		tRemembered.m_bDispenser = true;
+		tRemembered.m_vOrigin = vOrigin;
+		return tRemembered;
+	}
+}
+
 bool CNavBotSupplies::GetSuppliesData(CTFPlayer* pLocal, bool& bClosestTaken, bool bIsAmmo)
 {
 	if (bIsAmmo)
@@ -24,12 +51,7 @@ bool CNavBotSupplies::GetSuppliesData(CTFPlayer* pLocal, bool& bClosestTaken, bo
 	if (m_vTempMain.size())
 	{
 		// Sort by distance, closer is better
-		auto vLocalOrigin = pLocal->GetAbsOrigin();
-		std::sort(m_vTempMain.begin(), m_vTempMain.end(), [&](SupplyData_t& a, SupplyData_t& b) -> bool
-			{
-				return a.m_vOrigin.DistTo(vLocalOrigin) < b.m_vOrigin.DistTo(vLocalOrigin);
-			});
-
+		SortSuppliesByDistance(m_vTempMain, pLocal->GetAbsOrigin());
 
 		bClosestTaken = m_vTempMain.front().m_flRespawnTime;
 		return true;
@@ -71,11 +93,7 @@ bool CNavBotSupplies::GetDispensersData(CTFPlayer* pLocal)
 	if (m_vTempDispensers.size())
 	{
 		// Sort by distance, closer is better
-		auto vLocalOrigin = pLocal->GetAbsOrigin();
-		std::sort(m_vTempDispensers.begin(), m_vTempDispensers.end(), [&](SupplyData_t& a, SupplyData_t& b) -> bool
-			{
-				return a.m_vOrigin.DistTo(vLocalOrigin) < b.m_vOrigin.DistTo(vLocalOrigin);
-			});
+		SortSuppliesByDistance(m_vTempDispensers, pLocal->GetAbsOrigin());
 		return true;
 	}
 	return false;
@@ -213,9 +231,7 @@ bool CNavBotSupplies::Run(CUserCmd* pCmd, CTFPlayer* pLocal, int iFlags)
 	m_vTempMain.clear();
 	m_vTempDispensers.clear();
 	bool bLowPrio = iFlags & GetSupplyEnum::LowPrio;
-	const PriorityListEnum::PriorityListEnum ePriority = iFlags & GetSupplyEnum::Health ?
-		bLowPrio ? PriorityListEnum::LowPrioGetHealth : PriorityListEnum::GetHealth :
-		PriorityListEnum::GetAmmo;
+	const auto ePriority = GetSupplyPriority(iFlags);
 
 	static bool bWasForce = false;
 	bool bShouldForce = iFlags & GetSupplyEnum::Forced;
@@ -237,9 +253,7 @@ bool CNavBotSupplies::Run(CUserCmd* pCmd, CTFPlayer* pLocal, int iFlags)
 	{
 		if (!bIsAmmo && bHasRememberedDispenser && bNeedsHealthStill && !tRememberedDispenserTimer.Check(2.f))
 		{
-			SupplyData_t tRemembered{};
-			tRemembered.m_bDispenser = true;
-			tRemembered.m_vOrigin = vRememberedDispenser;
+			auto tRemembered = BuildRememberedDispenser(vRememberedDispenser);
 			if (GetSupply(pCmd, pLocal, pLocal->GetAbsOrigin(), &tRemembered, ePriority))
 				return true;
 		}
@@ -278,9 +292,7 @@ bool CNavBotSupplies::Run(CUserCmd* pCmd, CTFPlayer* pLocal, int iFlags)
 		}
 		else if (bHasRememberedDispenser && bNeedsHealthStill && !tRememberedDispenserTimer.Check(2.f))
 		{
-			SupplyData_t tRemembered{};
-			tRemembered.m_bDispenser = true;
-			tRemembered.m_vOrigin = vRememberedDispenser;
+			auto tRemembered = BuildRememberedDispenser(vRememberedDispenser);
 			if (GetSupply(pCmd, pLocal, pLocal->GetAbsOrigin(), &tRemembered, ePriority))
 				return true;
 		}
@@ -303,13 +315,9 @@ bool CNavBotSupplies::Run(CUserCmd* pCmd, CTFPlayer* pLocal, int iFlags)
 		bHasCloseDispenser = true;
 		m_vTempMain.reserve(m_vTempMain.size() + m_vTempDispensers.size());
 		m_vTempMain.insert(m_vTempMain.end(), m_vTempDispensers.begin(), m_vTempDispensers.end());
-		std::sort(m_vTempMain.begin(), m_vTempMain.end(), [&](SupplyData_t& a, SupplyData_t& b) -> bool
-			{
-				return a.m_vOrigin.DistTo(vLocalOrigin) < b.m_vOrigin.DistTo(vLocalOrigin);
-			});
+		SortSuppliesByDistance(m_vTempMain, vLocalOrigin);
 	}
 
-	bool bWaitForRespawn = false;
 	SupplyData_t* pBest = nullptr, * pSecondBest = nullptr;
 	if (bClosestSupplyWasTaken)
 	{

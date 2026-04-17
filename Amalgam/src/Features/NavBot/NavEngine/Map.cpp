@@ -2,6 +2,44 @@
 #include "../BotUtils.h"
 #include "../DangerManager/DangerManager.h"
 
+namespace
+{
+	float GetAreaVerticalOutside(const CNavArea& tArea, const Vector& vPos)
+	{
+		const float flBelow = std::max(tArea.m_flMinZ - vPos.z, 0.0f);
+		const float flAbove = std::max(vPos.z - tArea.m_flMaxZ, 0.0f);
+		return flBelow + flAbove;
+	}
+
+	float GetNearestAreaScore(const CNavArea& tArea, const Vector& vPos, bool bLocalOrigin, bool* pIsTightOverlap = nullptr)
+	{
+		const float flNearestX = std::clamp(vPos.x, tArea.m_vNwCorner.x, tArea.m_vSeCorner.x);
+		const float flNearestY = std::clamp(vPos.y, tArea.m_vNwCorner.y, tArea.m_vSeCorner.y);
+		const float flNearestZ = tArea.GetZ(flNearestX, flNearestY);
+		const float flVerticalToSurface = std::fabs(flNearestZ - vPos.z);
+		const float flVerticalOutside = GetAreaVerticalOutside(tArea, vPos);
+
+		const float flDx = flNearestX - vPos.x;
+		const float flDy = flNearestY - vPos.y;
+		const float flPlanarDistSqr = flDx * flDx + flDy * flDy;
+
+		const bool bOverlapping = tArea.IsOverlapping(vPos);
+		const bool bTightOverlap = bOverlapping && flVerticalOutside <= 18.0f;
+		if (pIsTightOverlap)
+			*pIsTightOverlap = bTightOverlap;
+
+		float flScore = flPlanarDistSqr + (flVerticalToSurface * flVerticalToSurface * 6.0f) + (flVerticalOutside * flVerticalOutside * (bLocalOrigin ? 18.0f : 10.0f));
+		if (bOverlapping)
+			flScore *= bLocalOrigin ? 0.45f : 0.7f;
+		if (bTightOverlap)
+			flScore *= 0.15f;
+		else if (bLocalOrigin && bOverlapping && flVerticalOutside > PLAYER_JUMP_HEIGHT)
+			flScore += flVerticalOutside * flVerticalOutside * 8.0f;
+
+		return flScore;
+	}
+}
+
 // 0 = Success, 1 = No Path, 2 = Start/End invalid
 int CMap::Solve(CNavArea* pStart, CNavArea* pEnd, std::vector<void*>* path, float* cost)
 {
@@ -754,6 +792,9 @@ void CMap::ApplyBlacklistAround(const Vector& vOrigin, float flRadius, const Bla
 CNavArea* CMap::FindClosestNavArea(const Vector& vPos, bool bLocalOrigin)
 {
 	std::lock_guard lock(m_mutex);
+	float flBestTightOverlapScore = FLT_MAX;
+	CNavArea* pBestTightOverlapArea = nullptr;
+
 	float flBestOverlapScore = FLT_MAX;
 	CNavArea* pBestOverlapArea = nullptr;
 
@@ -763,36 +804,32 @@ CNavArea* CMap::FindClosestNavArea(const Vector& vPos, bool bLocalOrigin)
 	for (auto& tArea : m_navfile.m_vAreas)
 	{
 		const bool bOverlapping = tArea.IsOverlapping(vPos);
-		const float flAreaZ = tArea.GetZ(vPos.x, vPos.y);
-		const float flVerticalToArea = std::fabs(flAreaZ - vPos.z);
-
+		bool bTightOverlap = false;
+		const float flScore = GetNearestAreaScore(tArea, vPos, bLocalOrigin, &bTightOverlap);
 		if (bOverlapping)
 		{
-			float flOverlapScore = flVerticalToArea;
-			if (bLocalOrigin)
+			if (bTightOverlap && flScore < flBestTightOverlapScore)
 			{
-				if (vPos.z < (tArea.m_flMinZ - PLAYER_CROUCHED_JUMP_HEIGHT))
-					flOverlapScore += PLAYER_HEIGHT;
-				if (vPos.z > (tArea.m_flMaxZ + PLAYER_CROUCHED_JUMP_HEIGHT))
-					flOverlapScore += PLAYER_HEIGHT * 0.5f;
+				flBestTightOverlapScore = flScore;
+				pBestTightOverlapArea = &tArea;
 			}
 
-			if (flOverlapScore < flBestOverlapScore)
+			if (flScore < flBestOverlapScore)
 			{
-				flBestOverlapScore = flOverlapScore;
+				flBestOverlapScore = flScore;
 				pBestOverlapArea = &tArea;
 			}
 		}
 
-		Vector vDelta = tArea.m_vCenter - vPos;
-		const float flPlanarDistSqr = vDelta.x * vDelta.x + vDelta.y * vDelta.y;
-		const float flScore = flPlanarDistSqr + (flVerticalToArea * flVerticalToArea * 6.f);
 		if (flScore < flBestScore)
 		{
 			flBestScore = flScore;
 			pBestArea = &tArea;
 		}
 	}
+
+	if (pBestTightOverlapArea)
+		return pBestTightOverlapArea;
 
 	if (pBestOverlapArea)
 		return pBestOverlapArea;

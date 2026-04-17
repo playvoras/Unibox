@@ -26,7 +26,6 @@ class CBotUtils
 private:
 	std::unordered_map<int, bool> m_mAutoScopeCache;
 	std::unordered_map<int, bool> m_mAutoRevCache;
-	std::vector<ClosestEnemy_t> m_vCloseEnemies;
 	ClosestEnemy_t UpdateCloseEnemies(CTFPlayer* pLocal, CTFWeaponBase* pWeapon);
 
 	bool HasMedigunTargets(CTFPlayer* pLocal, CTFWeaponBase* pWeapon);

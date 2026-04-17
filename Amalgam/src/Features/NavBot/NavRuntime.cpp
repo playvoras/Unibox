@@ -18,15 +18,16 @@ namespace NavRuntime
 		if (pLocal->IsTaunting() && !pLocal->m_bAllowMoveDuringTaunt())
 			return true;
 
-		if (auto pGameRules = I::TFGameRules())
-		{
-			if (pGameRules->m_bInWaitingForPlayers())
-				return true;
+		const auto pGameRules = I::TFGameRules();
+		if (!pGameRules)
+			return false;
 
-			const int iRoundState = pGameRules->m_iRoundState();
-			if (iRoundState == GR_STATE_PREROUND || iRoundState == GR_STATE_BETWEEN_RNDS)
-				return true;
-		}
+		if (pGameRules->m_bInWaitingForPlayers())
+			return true;
+
+		const int iRoundState = pGameRules->m_iRoundState();
+		if (iRoundState == GR_STATE_PREROUND || iRoundState == GR_STATE_BETWEEN_RNDS)
+			return true;
 
 		return false;
 	}
@@ -37,10 +38,7 @@ namespace NavRuntime
 			return false;
 
 		const int iState = pWeapon->As<CTFMinigun>()->m_iWeaponState();
-		if (iState == AC_STATE_STARTFIRING || iState == AC_STATE_FIRING || iState == AC_STATE_SPINNING)
-			return true;
-
-		return pCmd && (pCmd->buttons & IN_ATTACK2);
+		return iState == AC_STATE_STARTFIRING || iState == AC_STATE_FIRING || iState == AC_STATE_SPINNING || (pCmd && (pCmd->buttons & IN_ATTACK2));
 	}
 
 	auto CanIssueNavJump(CTFWeaponBase* pWeapon, CUserCmd* pCmd) -> bool

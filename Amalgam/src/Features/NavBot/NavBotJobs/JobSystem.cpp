@@ -1,8 +1,8 @@
 #include "JobSystem.h"
 
 #include <algorithm>
+#include <array>
 #include <limits>
-#include <vector>
 
 #include "Capture.h"
 #include "Engineer.h"
@@ -47,6 +47,22 @@ namespace
 		job_kind_t m_eKind = {};
 		float m_flScore = 0.f;
 	};
+
+	template <size_t nCount>
+	auto FindBestCandidate(std::array<job_candidate_t, nCount>& aCandidates) -> job_candidate_t*
+	{
+		job_candidate_t* pBestCandidate = nullptr;
+		for (auto& tCandidate : aCandidates)
+		{
+			if (tCandidate.m_flScore <= 0.f)
+				continue;
+
+			if (!pBestCandidate || tCandidate.m_flScore > pBestCandidate->m_flScore)
+				pBestCandidate = &tCandidate;
+		}
+
+		return pBestCandidate;
+	}
 
 	auto get_active_priority_score(nav_priority_t ePriority, float flScore, float flBonus = 140.f, float flCleanupScore = 320.f) -> float
 	{
@@ -503,40 +519,29 @@ auto CNavBotJobSystem::Run(CUserCmd* pCmd, CTFPlayer* pLocal, CTFWeaponBase* pWe
 	if (!pLocal || !pWeapon)
 		return tResult;
 
-	std::vector<job_candidate_t> vCandidates{};
-	vCandidates.reserve(15);
+	std::array aCandidates =
+	{
+		job_candidate_t{ job_kind_t::escape_spawn, get_escape_spawn_score(pLocal) },
+		job_candidate_t{ job_kind_t::escape_projectiles, get_projectile_escape_score(pLocal) },
+		job_candidate_t{ job_kind_t::escape_danger, get_escape_danger_score(pLocal) },
+		job_candidate_t{ job_kind_t::get_health, get_health_score(pLocal, false) },
+		job_candidate_t{ job_kind_t::engineer, get_engineer_score(pLocal) },
+		job_candidate_t{ job_kind_t::run_reload, get_run_reload_score(pLocal) },
+		job_candidate_t{ job_kind_t::melee, get_melee_score(pLocal) },
+		job_candidate_t{ job_kind_t::get_ammo, get_ammo_score(pLocal) },
+		job_candidate_t{ job_kind_t::capture, get_capture_score() },
+		job_candidate_t{ job_kind_t::snipe_sentry, get_snipe_sentry_score(pLocal) },
+		job_candidate_t{ job_kind_t::safe_reload, get_safe_reload_score(pLocal) },
+		job_candidate_t{ job_kind_t::stay_near, get_stay_near_score(pLocal, pWeapon) },
+		job_candidate_t{ job_kind_t::low_prio_health, get_health_score(pLocal, true) },
+		job_candidate_t{ job_kind_t::group_with_others, get_group_with_others_score() },
+		job_candidate_t{ job_kind_t::roam, get_roam_score() }
+	};
 
-	auto AddCandidate = [&](job_kind_t eKind, float flScore)
-		{
-			if (flScore > 0.f)
-				vCandidates.push_back({ eKind, flScore });
-		};
-
-	AddCandidate(job_kind_t::escape_spawn, get_escape_spawn_score(pLocal));
-	AddCandidate(job_kind_t::escape_projectiles, get_projectile_escape_score(pLocal));
-	AddCandidate(job_kind_t::escape_danger, get_escape_danger_score(pLocal));
-	AddCandidate(job_kind_t::get_health, get_health_score(pLocal, false));
-	AddCandidate(job_kind_t::engineer, get_engineer_score(pLocal));
-	AddCandidate(job_kind_t::run_reload, get_run_reload_score(pLocal));
-	AddCandidate(job_kind_t::melee, get_melee_score(pLocal));
-	AddCandidate(job_kind_t::get_ammo, get_ammo_score(pLocal));
-	AddCandidate(job_kind_t::capture, get_capture_score());
-	AddCandidate(job_kind_t::snipe_sentry, get_snipe_sentry_score(pLocal));
-	AddCandidate(job_kind_t::safe_reload, get_safe_reload_score(pLocal));
-	AddCandidate(job_kind_t::stay_near, get_stay_near_score(pLocal, pWeapon));
-	AddCandidate(job_kind_t::low_prio_health, get_health_score(pLocal, true));
-	AddCandidate(job_kind_t::group_with_others, get_group_with_others_score());
-	AddCandidate(job_kind_t::roam, get_roam_score());
-
-	std::stable_sort(vCandidates.begin(), vCandidates.end(), [](const job_candidate_t& a, const job_candidate_t& b) -> bool
-		{
-			return a.m_flScore > b.m_flScore;
-		});
-
-	for (const auto& tCandidate : vCandidates)
+	while (auto pCandidate = FindBestCandidate(aCandidates))
 	{
 		bool bHasJob = false;
-		switch (tCandidate.m_eKind)
+		switch (pCandidate->m_eKind)
 		{
 		case job_kind_t::escape_spawn:
 			bHasJob = TryEscapeSpawn(pLocal);
@@ -592,6 +597,8 @@ auto CNavBotJobSystem::Run(CUserCmd* pCmd, CTFPlayer* pLocal, CTFWeaponBase* pWe
 			tResult.m_bHasJob = true;
 			return tResult;
 		}
+
+		pCandidate->m_flScore = 0.f;
 	}
 
 	return tResult;

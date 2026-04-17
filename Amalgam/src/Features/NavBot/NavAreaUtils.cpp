@@ -60,7 +60,7 @@ namespace NavAreaUtils
 {
 	auto FindClosestHidingSpot(
 		CNavArea* pArea,
-		Vector vVischeckPoint,
+		const Vector& vVischeckPoint,
 		int iRecursionCount,
 		std::pair<CNavArea*, int>& tOut,
 		bool bVischeck,

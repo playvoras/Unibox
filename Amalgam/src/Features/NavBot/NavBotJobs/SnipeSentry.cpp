@@ -2,6 +2,14 @@
 #include "NavJobUtils.h"
 #include "../NavEngine/NavEngine.h"
 
+namespace
+{
+	bool IsShortRangeSentryClass(CTFPlayer* pLocal)
+	{
+		return pLocal && (pLocal->m_iClass() == TF_CLASS_SCOUT || pLocal->m_iClass() == TF_CLASS_PYRO);
+	}
+}
+
 bool CNavBotSnipe::IsAreaValidForSnipe(Vector vEntOrigin, Vector vAreaOrigin, bool bShortRangeClass, bool bFixSentryZ)
 {
 	if (bFixSentryZ)
@@ -54,7 +62,7 @@ bool CNavBotSnipe::Run(CTFPlayer* pLocal)
 	}
 
 	// Make sure we don't try to do it on shortrange classes unless specified
-	bool bShortRangeClass = pLocal->m_iClass() == TF_CLASS_SCOUT || pLocal->m_iClass() == TF_CLASS_PYRO;
+	bool bShortRangeClass = IsShortRangeSentryClass(pLocal);
 	if (!(Vars::Misc::Movement::NavBot::Preferences.Value & Vars::Misc::Movement::NavBot::PreferencesEnum::TargetSentriesLowRange) &&
 		bShortRangeClass)
 	{

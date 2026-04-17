@@ -4,6 +4,30 @@
 #include "../NavEngine/Controllers/FlagController/FlagController.h"
 #include "../NavEngine/Controllers/Controller.h"
 
+namespace
+{
+	bool IsHighDangerReason(BlacklistReasonEnum::BlacklistReasonEnum eReason)
+	{
+		return eReason == BlacklistReasonEnum::Sentry || eReason == BlacklistReasonEnum::Sticky || eReason == BlacklistReasonEnum::EnemyInvuln;
+	}
+
+	bool IsMediumDangerReason(BlacklistReasonEnum::BlacklistReasonEnum eReason)
+	{
+		return eReason == BlacklistReasonEnum::SentryMedium || eReason == BlacklistReasonEnum::EnemyNormal;
+	}
+
+	bool CanUseDangerArea(BlacklistReasonEnum::BlacklistReasonEnum eReason, bool bHasTarget, bool bLowHealth)
+	{
+		if (IsHighDangerReason(eReason))
+			return false;
+
+		if (IsMediumDangerReason(eReason))
+			return bHasTarget && !bLowHealth;
+
+		return true;
+	}
+}
+
 bool CNavBotDanger::EscapeDanger(CTFPlayer* pLocal)
 {
 	if (!(Vars::Misc::Movement::NavBot::Preferences.Value & Vars::Misc::Movement::NavBot::PreferencesEnum::EscapeDanger))
@@ -123,25 +147,7 @@ bool CNavBotDanger::EscapeDanger(CTFPlayer* pLocal)
 			auto it = pBlacklist->find(pArea);
 			if (it != pBlacklist->end())
 			{
-				// Check danger level - allow pathing through medium or low danger if we have a target
-				bool bContinue = false;
-				switch (it->second.m_eValue)
-				{
-				case BlacklistReasonEnum::Sentry:
-				case BlacklistReasonEnum::Sticky:
-				case BlacklistReasonEnum::EnemyInvuln:
-					// Skip high danger areas
-					bContinue = true;
-					break;
-				case BlacklistReasonEnum::SentryMedium:
-				case BlacklistReasonEnum::EnemyNormal:
-					// Skip medium danger areas if we don't have a target or have low health
-					bContinue = !bHasTarget || pLocal->m_iHealth() < pLocal->GetMaxHealth() * 0.5f;
-					break;
-				default:
-					break;
-				}
-				if (bContinue)
+				if (!CanUseDangerArea(it->second.m_eValue, bHasTarget, pLocal->m_iHealth() < pLocal->GetMaxHealth() * 0.5f))
 					continue;
 			}
 
@@ -213,7 +219,7 @@ bool CNavBotDanger::EscapeDanger(CTFPlayer* pLocal)
 			{
 				auto it = pBlacklist->find(pArea);
 				if (it == pBlacklist->end() ||
-					(bInHighDanger && (it->second.m_eValue == BlacklistReasonEnum::SentryLow || it->second.m_eValue == BlacklistReasonEnum::EnemyDormant)))
+					(bInHighDanger && !IsHighDangerReason(it->second.m_eValue) && !IsMediumDangerReason(it->second.m_eValue)))
 				{
 					iCalls++;
 					if (iCalls > 5)

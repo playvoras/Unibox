@@ -6,6 +6,32 @@
 #include "../NavEngine/NavEngine.h"
 #include "../NavEngine/Controllers/Controller.h"
 
+namespace
+{
+	auto FindClosestThreatToArea(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CNavArea* pArea) -> std::pair<CBaseEntity*, float>
+	{
+		if (!pLocal || !pWeapon || !pArea)
+			return { nullptr, FLT_MAX };
+
+		CBaseEntity* pClosestEnemy = nullptr;
+		float flBestDist = FLT_MAX;
+		for (auto pEntity : H::Entities.GetGroup(EntityEnum::PlayerEnemy))
+		{
+			if (!F::BotUtils.ShouldTarget(pLocal, pWeapon, pEntity->entindex()))
+				continue;
+
+			const float flDist = pEntity->GetAbsOrigin().DistTo(pArea->m_vCenter);
+			if (flDist >= flBestDist)
+				continue;
+
+			flBestDist = flDist;
+			pClosestEnemy = pEntity;
+		}
+
+		return { pClosestEnemy, flBestDist };
+	}
+}
+
 bool CNavBotRoam::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 {
 	static Timer tRoamTimer;
@@ -85,21 +111,7 @@ bool CNavBotRoam::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 
 			if (auto pClosestNav = F::NavEngine.FindClosestNavArea(vTarget))
 			{
-				// Get closest enemy to vicheck
-				CBaseEntity* pClosestEnemy = nullptr;
-				float flBestDist = FLT_MAX;
-				for (auto pEntity : H::Entities.GetGroup(EntityEnum::PlayerEnemy))
-				{
-					if (!F::BotUtils.ShouldTarget(pLocal, pWeapon, pEntity->entindex()))
-						continue;
-
-					float flDist = pEntity->GetAbsOrigin().DistTo(pClosestNav->m_vCenter);
-					if (flDist > flBestDist)
-						continue;
-
-					flBestDist = flDist;
-					pClosestEnemy = pEntity;
-				}
+				const auto [pClosestEnemy, flBestDist] = FindClosestThreatToArea(pLocal, pWeapon, pClosestNav);
 
 				Vector vVischeckPoint;
 				bool bVischeck = pClosestEnemy && flBestDist <= 1000.f;
