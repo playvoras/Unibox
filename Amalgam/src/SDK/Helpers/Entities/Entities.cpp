@@ -261,6 +261,9 @@ void CEntities::Store()
 				break;
 			case ETFClassID::CCaptureFlag:
 			case ETFClassID::CCaptureZone:
+			case ETFClassID::CPasstimeBall:
+			case ETFClassID::CTFPasstimeLogic:
+			case ETFClassID::CFuncPasstimeGoal:
 			case ETFClassID::CObjectCartDispenser:
 			case ETFClassID::CTeamControlPoint:
 			case ETFClassID::CFuncTrackTrain:

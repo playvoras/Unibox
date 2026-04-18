@@ -262,63 +262,7 @@ void CVisuals::DrawPickupTimers()
 
 static bool StoreTriggerBrushSurfaces(TriggerData_t& tTrigger)
 {
-	int iNumSurfaces = tTrigger.m_pModel->brush.nummodelsurfaces;
-	bool bShouldRotate = !tTrigger.m_vRotate.IsZero();
-	Vector vTopSurfCenter = { 0, -FLT_MAX, 0 }, vBottomSurfCenter = { 0, FLT_MAX, 0 };
-	for (int i = 0; i < iNumSurfaces; i++)
-	{
-		int iSurfaceIdx = tTrigger.m_pModel->brush.firstmodelsurface + i;
-		auto pBrushData = tTrigger.m_pModel->brush.pShared;
-
-		// Dont touch
-		auto uSurfacePtr = reinterpret_cast<uintptr_t>(pBrushData->surfaces2) + (iSurfaceIdx << 6);
-		auto uVertCount = *reinterpret_cast<char*>(uSurfacePtr + 3);
-		auto iFirstVertIndex = *reinterpret_cast<int*>(uSurfacePtr + 12);
-
-		Vector vFirstPoint = pBrushData->vertexes[pBrushData->vertindices[iFirstVertIndex]].position, vLastPoint;
-		std::vector<Vector> vPoints{ bShouldRotate ? vFirstPoint : tTrigger.m_vOrigin + vFirstPoint };
-
-		Vector vSurfaceCenter;
-		float flTotalArea = 0.0f;
-		for (int j = 1; j < uVertCount; j++)
-		{
-			auto iVertIdx = pBrushData->vertindices[iFirstVertIndex + j];
-			Vector vCurrentPoint = pBrushData->vertexes[iVertIdx].position;
-			if (j > 1)
-			{
-				Vector vNormal = (vCurrentPoint - vLastPoint).Cross(vCurrentPoint - vFirstPoint);
-				float flArea = vNormal.Length();
-				flTotalArea += flArea;
-				vSurfaceCenter += (vFirstPoint + vLastPoint + vCurrentPoint) * flArea / 3.0f;
-			}
-			Vector vFinal = vCurrentPoint;
-			if (bShouldRotate)
-				vFinal = Math::RotatePoint(vCurrentPoint, {}, tTrigger.m_vRotate);
-			vPoints.push_back(tTrigger.m_vOrigin + vFinal);
-			vLastPoint = vCurrentPoint;
-		}
-
-		if (flTotalArea)
-			vSurfaceCenter /= flTotalArea;
-
-		if (bShouldRotate)
-		{
-			auto& vFirstRotated = vPoints.front();
-			vSurfaceCenter = Math::RotatePoint(vSurfaceCenter, {}, tTrigger.m_vRotate);
-			vFirstRotated = tTrigger.m_vOrigin + Math::RotatePoint(vFirstRotated, {}, tTrigger.m_vRotate);
-		}
-
-		if (vBottomSurfCenter.y > vSurfaceCenter.y)
-			vBottomSurfCenter = vSurfaceCenter;
-		if (vTopSurfCenter.y < vSurfaceCenter.y)
-			vTopSurfCenter = vSurfaceCenter;
-
-		vSurfaceCenter += tTrigger.m_vOrigin;
-		tTrigger.m_vBrushSurfaces.push_back(BrushSurface_t(vSurfaceCenter, vPoints));
-	}
-	tTrigger.m_vCenter = tTrigger.m_vOrigin + Vector(vBottomSurfCenter.x, vBottomSurfCenter.y + (vTopSurfCenter.y - vBottomSurfCenter.y) / 2, vBottomSurfCenter.z);
-
-	return !tTrigger.m_vBrushSurfaces.empty();
+	return SDK::BuildTriggerGeometry(tTrigger);
 }
 static bool ShouldShowTrigger(TriggerTypeEnum::TriggerTypeEnum eType)
 {
@@ -727,9 +671,28 @@ std::vector<DrawBox_t> CVisuals::GetHitboxes(matrix3x4* aBones, CBaseAnimating* 
 
 void CVisuals::DrawEffects()
 {
+	auto is_finite_vec3 = [](const Vec3& v) -> bool
+	{
+		return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+	};
+
+	auto has_sane_extents = [&](const Vec3& vMins, const Vec3& vMaxs) -> bool
+	{
+		if (!is_finite_vec3(vMins) || !is_finite_vec3(vMaxs))
+			return false;
+
+		const Vec3 vSize = vMaxs - vMins;
+		return std::isfinite(vSize.x) && std::isfinite(vSize.y) && std::isfinite(vSize.z)
+			&& fabsf(vSize.x) <= 16384.0f
+			&& fabsf(vSize.y) <= 16384.0f
+			&& fabsf(vSize.z) <= 16384.0f;
+	};
+
 	for (auto& tLine : G::LineStorage)
 	{
 		if (tLine.m_flTime < I::GlobalVars->curtime)
+			continue;
+		if (!is_finite_vec3(tLine.m_paOrigin.first) || !is_finite_vec3(tLine.m_paOrigin.second))
 			continue;
 
 		H::Draw.RenderLine(tLine.m_paOrigin.first, tLine.m_paOrigin.second, tLine.m_tColor, tLine.m_bZBuffer);
@@ -739,11 +702,25 @@ void CVisuals::DrawEffects()
 		if (tPath.m_flTime >= 0.f && tPath.m_flTime < I::GlobalVars->curtime)
 			continue;
 
+		bool bInvalidPath = false;
+		for (const auto& vPoint : tPath.m_vPath)
+		{
+			if (!is_finite_vec3(vPoint))
+			{
+				bInvalidPath = true;
+				break;
+			}
+		}
+		if (bInvalidPath)
+			continue;
+
 		H::Draw.RenderPath(tPath.m_vPath, tPath.m_tColor, tPath.m_bZBuffer, tPath.m_iStyle, tPath.m_flTime);
 	}
 	for (auto& tBox : G::BoxStorage)
 	{
 		if (tBox.m_flTime < I::GlobalVars->curtime)
+			continue;
+		if (!is_finite_vec3(tBox.m_vOrigin) || !is_finite_vec3(tBox.m_vAngles) || !has_sane_extents(tBox.m_vMins, tBox.m_vMaxs))
 			continue;
 
 		H::Draw.RenderBox(tBox.m_vOrigin, tBox.m_vMins, tBox.m_vMaxs, tBox.m_vAngles, tBox.m_tColorFace, tBox.m_bZBuffer);
@@ -753,6 +730,8 @@ void CVisuals::DrawEffects()
 	{
 		if (tSphere.m_flTime < I::GlobalVars->curtime)
 			continue;
+		if (!is_finite_vec3(tSphere.m_vOrigin) || !std::isfinite(tSphere.m_flRadius) || tSphere.m_flRadius <= 0.0f || tSphere.m_flRadius > 8192.0f)
+			continue;
 
 		H::Draw.RenderSphere(tSphere.m_vOrigin, tSphere.m_flRadius, tSphere.m_nTheta, tSphere.m_nPhi, tSphere.m_tColorFace, tSphere.m_bZBuffer);
 		H::Draw.RenderWireframeSphere(tSphere.m_vOrigin, tSphere.m_flRadius, tSphere.m_nTheta, tSphere.m_nPhi, tSphere.m_tColorEdge, tSphere.m_bZBuffer);
@@ -760,6 +739,8 @@ void CVisuals::DrawEffects()
 	for (auto& tSwept : G::SweptStorage)
 	{
 		if (tSwept.m_flTime < I::GlobalVars->curtime)
+			continue;
+		if (!is_finite_vec3(tSwept.m_paOrigin.first) || !is_finite_vec3(tSwept.m_paOrigin.second) || !is_finite_vec3(tSwept.m_vAngles) || !has_sane_extents(tSwept.m_vMins, tSwept.m_vMaxs))
 			continue;
 
 		H::Draw.RenderWireframeSweptBox(tSwept.m_paOrigin.first, tSwept.m_paOrigin.second, tSwept.m_vMins, tSwept.m_vMaxs, tSwept.m_vAngles, tSwept.m_tColor, tSwept.m_bZBuffer);

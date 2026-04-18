@@ -4,6 +4,7 @@
 #include "PLController/PLController.h"
 #include "HaarpController/HaarpController.h"
 #include "DoomsdayController/DoomsdayController.h"
+#include "PasstimeController/PasstimeController.h"
 #include <string_view>
 
 namespace
@@ -64,6 +65,11 @@ void CGameObjectiveController::Update()
 		F::PLController.Update();
 		return;
 	}
+	if (MapStartsWith(sMapName, "pass_"))
+	{
+		F::PasstimeController.Update();
+		return;
+	}
 	if (MapStartsWith(sMapName, "ctf_") || MapStartsWith(sMapName, "sd_") || MapStartsWith(sMapName, "rd_") || MapStartsWith(sMapName, "pd_"))
 	{
 		F::FlagController.Update();
@@ -101,6 +107,9 @@ void CGameObjectiveController::Update()
 	case TF_GAMETYPE_ESCORT:
 		F::PLController.Update();
 		break;
+	case TF_GAMETYPE_PASSTIME:
+		F::PasstimeController.Update();
+		break;
 	default:
 		if (m_bDoomsday)
 		{
@@ -126,4 +135,5 @@ void CGameObjectiveController::Reset()
 	F::FlagController.Init();
 	F::PLController.Init();
 	F::CPController.Init();
+	F::PasstimeController.Init();
 }

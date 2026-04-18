@@ -5,6 +5,8 @@
 #include "../../Simulation/MovementSimulation/MovementSimulation.h"
 #include "../../Simulation/ProjectileSimulation/ProjectileSimulation.h"
 
+struct PasstimeGoalInfo;
+
 Enum(PointType, None = 0, Out = 1 << 0, In = 1 << 1, Out2 = 1 << 2, In2 = 1 << 3)
 Enum(Calculated, Pending, Good, Time, Bad)
 
@@ -94,6 +96,23 @@ private:
 	ProjectileInfo m_tProjInfo = {};
 
 	bool m_bLastTickHeld = false;
+	struct PasstimeThrowState_t
+	{
+		bool m_bHolding = false;
+		int m_iHoldTicks = 0;
+		int m_iTargetEnt = 0;
+		Vec3 m_vAngle = {};
+		float m_flCooldownUntil = 0.0f;
+
+		void Reset(float flCooldown = 0.0f)
+		{
+			m_bHolding = false;
+			m_iHoldTicks = 0;
+			m_iTargetEnt = 0;
+			m_vAngle = {};
+			m_flCooldownUntil = flCooldown;
+		}
+	} m_tPasstimeThrow;
 
 	float m_flTimeTo = std::numeric_limits<float>::max();
 	std::vector<Vec3> m_vPlayerPath = {};
@@ -134,11 +153,13 @@ private:
 public:
 	void Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd);
 	void RunGrapplingHook(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd);
+	bool AimPasstimePass(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd);
 
 	float GetSplashRadius(CTFWeaponBase* pWeapon, CTFPlayer* pPlayer);
 
 	bool AutoAirblast(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd, CBaseEntity* pProjectile);
 	float GetSplashRadius(CBaseEntity* pProjectile, CTFWeaponBase* pWeapon = nullptr, CTFPlayer* pPlayer = nullptr, float flScale = 1.f, CTFWeaponBase* pAirblast = nullptr);
+	bool HandlePasstimeThrowInput(CUserCmd* pCmd, const Vec3& vAngle, int iTargetEnt);
 
 	int m_iLastTickCancel = 0;
 };

@@ -293,6 +293,7 @@ void CCreateMove::Run(int nSequenceNum, float flInputSampleFrametime)
 	F::Misc.RunPre(pLocal, pCmd);
 	F::AutoJoin.Run(pLocal);
 	F::AutoItem.Run(pLocal);
+	SDK::RefreshTriggerStorage();
 	F::GameObjectiveController.Update();
 	F::BotUtils.Run(pLocal, pWeapon, pCmd);
 	F::AutoVote.Run(pLocal);

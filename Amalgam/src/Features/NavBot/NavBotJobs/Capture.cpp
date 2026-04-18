@@ -1,11 +1,13 @@
 #include "Capture.h"
 #include "../NavEngine/NavEngine.h"
 #include "../../Players/PlayerUtils.h"
+#include "../../Aimbot/AimbotProjectile/AimbotProjectile.h"
 #include "../NavEngine/Controllers/CPController/CPController.h"
 #include "../NavEngine/Controllers/FlagController/FlagController.h"
 #include "../NavEngine/Controllers/PLController/PLController.h"
 #include "../NavEngine/Controllers/HaarpController/HaarpController.h"
 #include "../NavEngine/Controllers/DoomsdayController/DoomsdayController.h"
+#include "../NavEngine/Controllers/PasstimeController/PasstimeController.h"
 #include "../NavEngine/Controllers/Controller.h"
 #include "../../Misc/NamedPipe/NamedPipe.h"
 
@@ -462,6 +464,164 @@ bool CNavBotCapture::GetDoomsdayGoal(CTFPlayer* pLocal, int iOurTeam, int iEnemy
 	return false;
 }
 
+bool CNavBotCapture::GetPasstimeGoal(CTFPlayer* pLocal, int iOurTeam, int iEnemyTeam, Vector& vOut)
+{
+	m_sCaptureStatus = L"";
+
+	auto pBall = F::PasstimeController.GetBall();
+	static Timer tPasstimeLogTimer{};
+	const bool bLog = Vars::Debug::Logging.Value && tPasstimeLogTimer.Run(0.5f);
+	if (bLog)
+	{
+		SDK::Output("NavBotCapture", std::format(
+			"GetPasstimeGoal: local={} ourTeam={} enemyTeam={} hasBall={} ballEnt={} gameMode={}",
+			pLocal ? pLocal->entindex() : -1,
+			iOurTeam,
+			iEnemyTeam,
+			pLocal && pLocal->m_bHasPasstimeBall() ? 1 : 0,
+			pBall ? pBall->entindex() : -1,
+			int(F::GameObjectiveController.m_eGameMode)).c_str(),
+			{ 120, 200, 255 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+	}
+
+	if (!pBall)
+	{
+		if (Vars::Debug::Logging.Value)
+			SDK::Output("NavBotCapture", "GetPasstimeGoal: no ball entity from PasstimeController", { 255, 140, 140 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+		return false;
+	}
+
+	const int iLocalIndex = pLocal->entindex();
+	const int iCarrierIdx = F::PasstimeController.GetCarrier();
+	const bool bLocalCarrier = pLocal->m_bHasPasstimeBall() || iCarrierIdx == iLocalIndex;
+
+	if (bLog)
+	{
+		SDK::Output("NavBotCapture", std::format(
+			"GetPasstimeGoal: carrierIdx={} localCarrier={}",
+			iCarrierIdx, bLocalCarrier ? 1 : 0).c_str(),
+			{ 120, 200, 255 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+	}
+
+	if (bLocalCarrier)
+	{
+		PasstimeGoalInfo tGoal = {};
+		if (F::PasstimeController.GetGoalInfo(iOurTeam, pLocal->GetAbsOrigin(), tGoal))
+		{
+			if (!F::PasstimeController.IsEndzoneGoal(tGoal.m_iGoalType))
+				return false;
+
+			m_sCaptureStatus = L"Goal";
+			vOut = tGoal.m_vOrigin;
+
+			if (F::PasstimeController.IsPointInGoal(tGoal, pLocal->GetAbsOrigin()))
+			{
+				m_bOverwriteCapture = true;
+				m_bWalkTo = true;
+			}
+
+			if (Vars::Debug::Logging.Value)
+			{
+				SDK::Output("NavBotCapture", std::format(
+					"GetPasstimeGoal: local carrier target status={} goalType={} out=({:.0f},{:.0f},{:.0f})",
+					std::string(m_sCaptureStatus.begin(), m_sCaptureStatus.end()),
+					tGoal.m_iGoalType,
+					vOut.x, vOut.y, vOut.z).c_str(),
+					{ 120, 255, 120 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+			}
+			return true;
+		}
+
+		if (Vars::Debug::Logging.Value)
+			SDK::Output("NavBotCapture", "GetPasstimeGoal: local carrier but no goal info for enemy team", { 255, 140, 140 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+		return false;
+	}
+
+	if (iCarrierIdx > 0)
+	{
+		auto pCarrierEnt = I::ClientEntityList->GetClientEntity(iCarrierIdx);
+		auto pCarrier = pCarrierEnt ? pCarrierEnt->As<CTFPlayer>() : nullptr;
+		if (!pCarrier || pCarrier->IsDormant() || !pCarrier->IsAlive())
+			return false;
+
+		if (pCarrier->m_iTeamNum() == iOurTeam)
+		{
+			if (!F::BotUtils.ShouldAssist(pLocal, iCarrierIdx))
+				return false;
+
+			Vector vCarrierPos = pCarrier->GetAbsOrigin();
+			Vector vGoalPos = {};
+			if (!F::PasstimeController.GetGoalPos(iOurTeam, vCarrierPos, vGoalPos))
+			{
+				m_sCaptureStatus = L"Assist";
+				vOut = vCarrierPos;
+				if (Vars::Debug::Logging.Value)
+					SDK::Output("NavBotCapture", "GetPasstimeGoal: teammate carrier assist fallback, no goal pos", { 255, 210, 120 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+				return true;
+			}
+
+			Vector vDir = vGoalPos - vCarrierPos;
+			if (vDir.Normalize() <= 0.01f)
+			{
+				m_sCaptureStatus = L"Assist";
+				vOut = vCarrierPos;
+				return true;
+			}
+
+			Vector vSide = vDir.Cross(Vector(0, 0, 1));
+			vSide.Normalize();
+
+			float flForward = pLocal->m_bIsTargetedForPasstimePass() ? 180.f : -70.f;
+			float flSide = pLocal->m_bIsTargetedForPasstimePass() ? 60.f : 85.f;
+			float flMaxPassRange = F::PasstimeController.GetMaxPassRange();
+			if (flForward > 0.f && flMaxPassRange != FLT_MAX)
+				flForward = std::min(flForward, flMaxPassRange * 0.65f);
+
+			m_sCaptureStatus = pLocal->m_bIsTargetedForPasstimePass() ? L"Pass" : L"Assist";
+			vOut = vCarrierPos + vDir * flForward + vSide * flSide;
+			if (Vars::Debug::Logging.Value)
+			{
+				SDK::Output("NavBotCapture", std::format(
+					"GetPasstimeGoal: teammate carrier status={} out=({:.0f},{:.0f},{:.0f})",
+					std::string(m_sCaptureStatus.begin(), m_sCaptureStatus.end()),
+					vOut.x, vOut.y, vOut.z).c_str(),
+					{ 120, 255, 120 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+			}
+			return true;
+		}
+
+		Vector vEnemyGoal = {};
+		if (F::PasstimeController.GetGoalPos(iEnemyTeam, pCarrier->GetAbsOrigin(), vEnemyGoal) &&
+			pCarrier->GetAbsOrigin().DistTo(vEnemyGoal) <= 850.f)
+		{
+			m_sCaptureStatus = L"Defend";
+			vOut = vEnemyGoal;
+			return true;
+		}
+
+		m_sCaptureStatus = L"Carrier";
+		vOut = pCarrier->GetAbsOrigin();
+		return true;
+	}
+
+	if (F::PasstimeController.GetBallPos(vOut))
+	{
+		m_sCaptureStatus = L"Ball";
+		if (Vars::Debug::Logging.Value)
+		{
+			SDK::Output("NavBotCapture", std::format(
+				"GetPasstimeGoal: chasing loose ball at ({:.0f},{:.0f},{:.0f})",
+				vOut.x, vOut.y, vOut.z).c_str(),
+				{ 120, 255, 120 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+		}
+		return true;
+	}
+
+	if (Vars::Debug::Logging.Value)
+		SDK::Output("NavBotCapture", "GetPasstimeGoal: failed to resolve any passtime objective", { 255, 140, 140 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+	return false;
+}
+
 void CNavBotCapture::ClaimCaptureSpot(const Vector& vSpot, int iPointIdx)
 {
 #ifdef TEXTMODE
@@ -554,6 +714,9 @@ bool CNavBotCapture::Run(CUserCmd* pCmd, CTFPlayer* pLocal, CTFWeaponBase* pWeap
 	case TF_GAMETYPE_ESCORT:
 		bGotTarget = GetPayloadGoal(pLocal->GetRefEHandle(), vLocalOrigin, iOurTeam, vTarget);
 		break;
+	case TF_GAMETYPE_PASSTIME:
+		bGotTarget = GetPasstimeGoal(pLocal, iOurTeam, iEnemyTeam, vTarget);
+		break;
 	default:
 		if (F::GameObjectiveController.m_bDoomsday)
 			bGotTarget = GetDoomsdayGoal(pLocal, iOurTeam, iEnemyTeam, vTarget);
@@ -583,11 +746,42 @@ bool CNavBotCapture::Run(CUserCmd* pCmd, CTFPlayer* pLocal, CTFWeaponBase* pWeap
 
 	if (Vars::Debug::Info.Value)
 	{
-		G::SphereStorage.emplace_back(vTarget, 30.f, 20, 20, I::GlobalVars->curtime + 2.1f, Color_t(255, 255, 255, 10), Color_t(255, 255, 255, 100));
+		G::BoxStorage.emplace_back(vTarget, Vec3(-16.0f, -16.0f, -16.0f), Vec3(16.0f, 16.0f, 16.0f), Vec3(), I::GlobalVars->curtime + 2.1f, Color_t(255, 255, 255, 180), Color_t(0, 0, 0, 0), true);
+	}
+
+	if (Vars::Debug::Logging.Value && F::GameObjectiveController.m_eGameMode == TF_GAMETYPE_PASSTIME)
+	{
+		static Timer tRunLogTimer{};
+		if (tRunLogTimer.Run(0.5f))
+		{
+			SDK::Output("NavBotCapture", std::format(
+				"Run: passtime bGotTarget={} status={} overwrite={} walkTo={} target=({:.0f},{:.0f},{:.0f}) priority={}",
+				bGotTarget ? 1 : 0,
+				std::string(m_sCaptureStatus.begin(), m_sCaptureStatus.end()),
+				m_bOverwriteCapture ? 1 : 0,
+				m_bWalkTo ? 1 : 0,
+				vTarget.x, vTarget.y, vTarget.z,
+				int(F::NavEngine.m_eCurrentPriority)).c_str(),
+				{ 180, 220, 255 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+		}
+	}
+
+	if (F::GameObjectiveController.m_eGameMode == TF_GAMETYPE_PASSTIME
+		&& pWeapon && pWeapon->GetWeaponID() == TF_WEAPON_PASSTIME_GUN
+		&& pLocal->m_bHasPasstimeBall())
+	{
+		if (F::AimbotProjectile.AimPasstimePass(pLocal, pWeapon, pCmd))
+		{
+			if (F::NavEngine.IsPathing())
+				F::NavEngine.CancelPath();
+			return true;
+		}
 	}
 
 	// If priority is not capturing, or we have a new target, try to path there
-	if (F::NavEngine.m_eCurrentPriority != PriorityListEnum::Capture || vTarget.DistToSqr(vPreviousTarget) > 256.f)
+	const bool bPasstimeCarrier = F::GameObjectiveController.m_eGameMode == TF_GAMETYPE_PASSTIME && pLocal->m_bHasPasstimeBall();
+	const float flRetargetThresholdSq = bPasstimeCarrier ? pow(180.0f, 2) : 256.0f;
+	if (F::NavEngine.m_eCurrentPriority != PriorityListEnum::Capture || vTarget.DistToSqr(vPreviousTarget) > flRetargetThresholdSq)
 	{
 		bool bNavOk = F::NavEngine.NavTo(vTarget, PriorityListEnum::Capture, true, !F::NavEngine.IsPathing());
 		if (bNavOk)
@@ -604,7 +798,8 @@ bool CNavBotCapture::Run(CUserCmd* pCmd, CTFPlayer* pLocal, CTFWeaponBase* pWeap
 			tCaptureTimer.Update();
 		}
 	}
-	return false;
+
+	return F::NavEngine.m_eCurrentPriority == PriorityListEnum::Capture;
 }
 
 void CNavBotCapture::Reset()

@@ -18,6 +18,7 @@ MAKE_HOOK(CHLClient_LevelShutdown, U::Memory.GetVirtual(I::Client, 7), void,
 	F::Spectate.Reset();
 #ifndef TEXTMODE
 	G::TriggerStorage.clear();
+	G::PasstimeGoalStorage.clear();
 #endif
 	F::NavEngine.ClearRespawnRooms();
 	F::NavEngine.FlushCrumbCache();

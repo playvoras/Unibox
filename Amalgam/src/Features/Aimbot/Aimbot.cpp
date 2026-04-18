@@ -13,7 +13,7 @@
 bool CAimbot::ShouldRun(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 {
 	if (!pWeapon || !pLocal->CanAttack()
-		|| !SDK::AttribHookValue(1, "mult_dmg", pWeapon)
+		|| (pWeapon->GetWeaponID() != TF_WEAPON_PASSTIME_GUN || !pLocal->m_bHasPasstimeBall()) && !SDK::AttribHookValue(1, "mult_dmg", pWeapon)
 		/*|| I::EngineVGui->IsGameUIVisible()*/)
 		return false;
 

@@ -423,9 +423,39 @@ namespace
 		return true;
 	}
 
-	auto get_capture_score() -> float
+	auto get_capture_score(CTFPlayer* pLocal) -> float
 	{
 		float flScore = can_capture_objective() ? 520.f : 0.f;
+		if (!pLocal || !flScore)
+			return get_active_priority_score(PriorityListEnum::Capture, flScore);
+
+		switch (F::GameObjectiveController.m_eGameMode)
+		{
+		case TF_GAMETYPE_PASSTIME:
+		{
+			const int iCarrierIdx = F::PasstimeController.GetCarrier();
+			if (pLocal->m_bHasPasstimeBall() || iCarrierIdx == pLocal->entindex())
+				flScore = 1750.f;
+			else if (iCarrierIdx > 0)
+				flScore = 900.f;
+			else if (F::PasstimeController.GetBall())
+				flScore = 760.f;
+			break;
+		}
+		case TF_GAMETYPE_CTF:
+		{
+			const int iOurTeam = pLocal->m_iTeamNum();
+			const int iEnemyTeam = iOurTeam == TF_TEAM_BLUE ? TF_TEAM_RED : TF_TEAM_BLUE;
+			if (F::FlagController.GetCarrier(iEnemyTeam) == pLocal->entindex())
+				flScore = 1700.f;
+			else if (F::FlagController.GetCarrier(iEnemyTeam) > 0)
+				flScore = 880.f;
+			break;
+		}
+		default:
+			break;
+		}
+
 		return get_active_priority_score(PriorityListEnum::Capture, flScore);
 	}
 
@@ -529,7 +559,7 @@ auto CNavBotJobSystem::Run(CUserCmd* pCmd, CTFPlayer* pLocal, CTFWeaponBase* pWe
 		job_candidate_t{ job_kind_t::run_reload, get_run_reload_score(pLocal) },
 		job_candidate_t{ job_kind_t::melee, get_melee_score(pLocal) },
 		job_candidate_t{ job_kind_t::get_ammo, get_ammo_score(pLocal) },
-		job_candidate_t{ job_kind_t::capture, get_capture_score() },
+		job_candidate_t{ job_kind_t::capture, get_capture_score(pLocal) },
 		job_candidate_t{ job_kind_t::snipe_sentry, get_snipe_sentry_score(pLocal) },
 		job_candidate_t{ job_kind_t::safe_reload, get_safe_reload_score(pLocal) },
 		job_candidate_t{ job_kind_t::stay_near, get_stay_near_score(pLocal, pWeapon) },

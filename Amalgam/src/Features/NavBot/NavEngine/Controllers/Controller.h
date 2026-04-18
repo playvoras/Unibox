@@ -3,6 +3,7 @@
 
 #include "HaarpController/HaarpController.h"
 #include "DoomsdayController/DoomsdayController.h"
+#include "PasstimeController/PasstimeController.h"
 
 class CGameObjectiveController
 {
