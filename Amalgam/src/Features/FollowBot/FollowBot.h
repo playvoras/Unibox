@@ -43,7 +43,7 @@ private:
 	std::deque<Vec3> m_vTempAngles = {};
 	Vec3 m_vLastTargetAngles = {};
 public:
-	void Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd);
+	void Run(CTFPlayer* pLocal, CUserCmd* pCmd);
 	void Reset(int iFlags = FB_RESET_TARGETS);
 
 	void Render();

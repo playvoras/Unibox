@@ -11,11 +11,8 @@ namespace
 		return pCmd && (pCmd->buttons & (IN_FORWARD | IN_BACK | IN_MOVERIGHT | IN_MOVELEFT)) && !F::Misc.m_bAntiAFK;
 	}
 
-	void SyncBestSlot(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
+	void SyncBestSlot(CTFPlayer* pLocal)
 	{
-		if (Vars::Misc::Movement::NavBot::Enabled.Value || !pWeapon)
-			return;
-
 		if (F::BotUtils.m_iCurrentSlot != F::BotUtils.m_iBestSlot)
 			F::BotUtils.SetSlot(pLocal, Vars::Misc::Movement::BotUtils::WeaponSlot.Value ? F::BotUtils.m_iBestSlot : -1);
 	}
@@ -205,7 +202,7 @@ void CFollowBot::LookAtPath(CTFPlayer* pLocal, CUserCmd* pCmd, std::deque<Vec3>*
 		vIn->pop_front();
 }
 
-void CFollowBot::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
+void CFollowBot::Run(CTFPlayer* pLocal, CUserCmd* pCmd)
 {
 	if (!Vars::Misc::Movement::FollowBot::Enabled.Value ||
 		!Vars::Misc::Movement::FollowBot::Targets.Value ||
@@ -221,7 +218,8 @@ void CFollowBot::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 		return;
 	}
 
-	SyncBestSlot(pLocal, pWeapon);
+	if (!Vars::Misc::Movement::NavBot::Enabled.Value)
+		SyncBestSlot(pLocal);
 
 	UpdateTargets(pLocal);
 	UpdateLockedTarget(pLocal);
@@ -281,7 +279,7 @@ void CFollowBot::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 	}
 	else
 	{
-		SyncBestSlot(pLocal, pWeapon);
+		SyncBestSlot(pLocal);
 
 		// Already pathing, no point in running everything else
 		return;
@@ -398,7 +396,7 @@ void CFollowBot::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 		LookAtPath(pLocal, pCmd, pFinalAngles, Vars::Misc::Movement::FollowBot::LookAtPathNoSnap.Value && Math::CalcFov(pFinalAngles->front(), F::BotUtils.m_vLastAngles) > 3.f);
 	}
 
-	SyncBestSlot(pLocal, pWeapon);
+	SyncBestSlot(pLocal);
 
 	if (bShouldWalk)
 		SDK::WalkTo(pCmd, pLocal, vDest);
