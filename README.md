@@ -25,7 +25,7 @@
   <br><br>
   <sub>If nightly.link is down or can't be accessed, you can still download through [GitHub](https://github.com/GatoPotato658/Unibox/actions) with an account. </sub>
   <br><br>
-  <sub>Textmode doesnt fully make the game textmode. You need to preload [TextModeTF2](https://github.com/mlemlody/TextmodeTF2) module to make the game textmode.</sub>
+  <sub>Textmode doesnt fully make the game textmode. You need to preload [TextModeTF2](https://github.com/pupnoodle/TextmodeTF2) module to make the game textmode.</sub>
 
   ##
   
@@ -52,7 +52,7 @@
   - Namedpipe
     - Implements communication with [neptune botpanel](https://github.com/mlemlody/neptune)
     - Sends client info such as localplayer's health, class, server name and map name
-  - Textmode builds ([TextModeTF2](https://github.com/mlemlody/TextmodeTF2) compatibility)
+  - Textmode builds ([TextModeTF2](https://github.com/pupnoodle/TextmodeTF2) compatibility)
     - Disables game visuals to decrease CPU usage
     - Enables `Namedpipe`
     - Enables some additional hooks to avoid crashes (currently WIP)

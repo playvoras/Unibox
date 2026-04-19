@@ -2,6 +2,21 @@
 #include "Reload.h"
 #include "../NavEngine/NavEngine.h"
 
+namespace
+{
+	bool ApproachMeleeTarget(CUserCmd* pCmd, CTFPlayer* pLocal, const Vector& vTargetOrigin)
+	{
+		// Crouch if we are standing on someone
+		if (pLocal->m_hGroundEntity().Get() && pLocal->m_hGroundEntity().Get()->IsPlayer())
+			pCmd->buttons |= IN_DUCK;
+
+		SDK::WalkTo(pCmd, pLocal, vTargetOrigin);
+		F::NavEngine.CancelPath();
+		F::NavEngine.m_eCurrentPriority = PriorityListEnum::MeleeAttack;
+		return true;
+	}
+}
+
 bool CNavBotMelee::Run(CUserCmd* pCmd, CTFPlayer* pLocal, int iSlot, ClosestEnemy_t tClosestEnemy)
 {
 	if (iSlot != SLOT_MELEE || F::NavBotReload.m_iLastReloadSlot != -1)
@@ -51,15 +66,7 @@ bool CNavBotMelee::Run(CUserCmd* pCmd, CTFPlayer* pLocal, int iSlot, ClosestEnem
 			vBackstabSpot = vTargetOrigin;
 
 		if (vLocalOrigin.DistTo(vBackstabSpot) < 100.0f && bIsVisible)
-		{
-			if (pLocal->m_hGroundEntity().Get() && pLocal->m_hGroundEntity().Get()->IsPlayer())
-				pCmd->buttons |= IN_DUCK;
-
-			SDK::WalkTo(pCmd, pLocal, vBackstabSpot);
-			F::NavEngine.CancelPath();
-			F::NavEngine.m_eCurrentPriority = PriorityListEnum::MeleeAttack;
-			return true;
-		}
+			return ApproachMeleeTarget(pCmd, pLocal, vBackstabSpot);
 
 		static Timer tSpyMeleeCooldown{};
 		float flDistToSpot = vLocalOrigin.DistTo(vBackstabSpot);
@@ -74,16 +81,7 @@ bool CNavBotMelee::Run(CUserCmd* pCmd, CTFPlayer* pLocal, int iSlot, ClosestEnem
 
 	// If we are close enough, don't even bother with using the navparser to get there
 	if (tClosestEnemy.m_flDist < 100.0f && bIsVisible)
-	{
-		// Crouch if we are standing on someone
-		if (pLocal->m_hGroundEntity().Get() && pLocal->m_hGroundEntity().Get()->IsPlayer())
-			pCmd->buttons |= IN_DUCK;
-
-		SDK::WalkTo(pCmd, pLocal, vTargetOrigin);
-		F::NavEngine.CancelPath();
-		F::NavEngine.m_eCurrentPriority = PriorityListEnum::MeleeAttack;
-		return true;
-	}
+		return ApproachMeleeTarget(pCmd, pLocal, vTargetOrigin);
 
 	// Don't constantly path, it's slow.
 	// The closer we are, the more we should try to path

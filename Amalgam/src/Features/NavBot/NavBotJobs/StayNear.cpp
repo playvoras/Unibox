@@ -1,4 +1,5 @@
 #include "StayNear.h"
+#include "NavJobUtils.h"
 #include "../NavEngine/NavEngine.h"
 #include "../../Players/PlayerUtils.h"
 
@@ -125,7 +126,7 @@ bool CNavBotStayNear::StayNearTarget(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, 
 	const Vector vAnchor = vPredictedOrigin + vForward * flOutrunDistance + vSide * (flSideDistance * flSideSign);
 
 	// Use std::pair to avoid using the distance functions more than once
-	std::vector<std::pair<CNavArea*, float>> vGoodAreas{};
+	std::vector<NavAreaScore_t> vGoodAreas{};
 
 	for (auto& tArea : F::NavEngine.GetNavFile()->m_vAreas)
 	{
@@ -149,17 +150,9 @@ bool CNavBotStayNear::StayNearTarget(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, 
 		}
 
 		const float flScore = flRangePenalty * 1.4f + flAnchorPenalty + flTravelPenalty * 0.15f + flAheadPenalty;
-		vGoodAreas.emplace_back(&tArea, flScore);
+		vGoodAreas.push_back({ &tArea, flScore });
 	}
-	// Sort based on score
-	std::sort(vGoodAreas.begin(), vGoodAreas.end(), [](std::pair<CNavArea*, float> a, std::pair<CNavArea*, float> b) { return a.second < b.second; });
-
-	// Try to path to all the good areas, based on distance
-	if (std::ranges::any_of(vGoodAreas, [&](std::pair<CNavArea*, float> pair) -> bool
-		{
-			return F::NavEngine.NavTo(pair.first->m_vCenter, PriorityListEnum::StayNear, true, !F::NavEngine.IsPathing());
-		})
-		)
+	if (NavJobUtils::TryNavToAreaScores(vGoodAreas, PriorityListEnum::StayNear))
 	{
 		m_iStayNearTargetIdx = pEntity->entindex();
 		if (auto pPlayerResource = H::Entities.GetResource())
@@ -284,6 +277,34 @@ bool CNavBotStayNear::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 	const int iDefaultPriority = F::PlayerUtils.m_vTags[F::PlayerUtils.TagToIndex(DEFAULT_TAG)].m_iPriority;
 	std::vector<std::pair<int, float>> vPriorityPlayers{};
 	std::vector<std::pair<int, float>> vSortedPlayers{};
+	auto TryCandidates = [&](std::vector<std::pair<int, float>>& vCandidates) -> bool
+		{
+			if (vCandidates.empty())
+				return false;
+
+			std::sort(vCandidates.begin(), vCandidates.end(), [](const std::pair<int, float>& a, const std::pair<int, float>& b) -> bool
+				{
+					return a.second < b.second;
+				});
+
+			// Stickiness: do not immediately replace a target unless it has been held for a minimum time.
+			if (iStayNearTargetIdx != -1 && !tTargetSwitchTimer.Check(1.0f) && vCandidates.front().first != iStayNearTargetIdx)
+				return F::NavEngine.m_eCurrentPriority == PriorityListEnum::StayNear;
+
+			for (auto [iIdx, _] : vCandidates)
+			{
+				if (!StayNearTarget(pLocal, pWeapon, iIdx))
+					continue;
+
+				if (iStayNearTargetIdx != iIdx)
+					tTargetSwitchTimer.Update();
+				iStayNearTargetIdx = iIdx;
+				return true;
+			}
+
+			return false;
+		};
+
 	for (const auto& pEntity : H::Entities.GetGroup(EntityEnum::PlayerEnemy))
 	{
 		auto iPlayerIdx = pEntity->entindex();
@@ -303,46 +324,8 @@ bool CNavBotStayNear::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 		vSortedPlayers.push_back({ iPlayerIdx, flDistance });
 	}
 
-	if (!vPriorityPlayers.empty())
-	{
-		std::sort(vPriorityPlayers.begin(), vPriorityPlayers.end(), [](std::pair<int, float> a, std::pair<int, float> b) { return a.second < b.second; });
-
-		// Stickiness: do not immediately replace a target unless it has been held for a minimum time.
-		if (iStayNearTargetIdx != -1 && !tTargetSwitchTimer.Check(1.0f) && vPriorityPlayers[0].first != iStayNearTargetIdx)
-			return F::NavEngine.m_eCurrentPriority == PriorityListEnum::StayNear;
-
-		for (auto [iIdx, _] : vPriorityPlayers)
-		{
-			if (StayNearTarget(pLocal, pWeapon, iIdx))
-			{
-				if (iStayNearTargetIdx != iIdx)
-					tTargetSwitchTimer.Update();
-				iStayNearTargetIdx = iIdx;
-				return true;
-			}
-		}
-	}
-
-	if (!vSortedPlayers.empty())
-	{
-		std::sort(vSortedPlayers.begin(), vSortedPlayers.end(), [](std::pair<int, float> a, std::pair<int, float> b) { return a.second < b.second; });
-
-		// Stickiness: do not immediately replace a target unless it has been held for a minimum time.
-		if (iStayNearTargetIdx != -1 && !tTargetSwitchTimer.Check(1.0f) && vSortedPlayers[0].first != iStayNearTargetIdx)
-			return F::NavEngine.m_eCurrentPriority == PriorityListEnum::StayNear;
-
-		for (auto [iIdx, _] : vSortedPlayers)
-		{
-			// Succeeded pathing
-			if (StayNearTarget(pLocal, pWeapon, iIdx))
-			{
-				if (iStayNearTargetIdx != iIdx)
-					tTargetSwitchTimer.Update();
-				iStayNearTargetIdx = iIdx;
-				return true;
-			}
-		}
-	}
+	if (TryCandidates(vPriorityPlayers) || TryCandidates(vSortedPlayers))
+		return true;
 
 	// Stay near failed to find any good targets, add extra delay
 	tStaynearCooldown += 3.f;

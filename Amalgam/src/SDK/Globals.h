@@ -113,6 +113,15 @@ struct TriggerData_t
 	bool PointIsWithin(Vec3 vPoint) const;
 };
 
+struct PasstimeMapGoalData_t
+{
+	Vec3 m_vOrigin = {};
+	std::string m_sTargetname = {};
+	int m_iTeam = 0;
+	int m_iSpawnflags = 0;
+	bool m_bStartDisabled = false;
+};
+
 namespace G
 {
 	inline bool Unload = false;
@@ -151,6 +160,7 @@ namespace G
 	inline std::vector<DrawSphere_t> SphereStorage = {};
 	inline std::vector<DrawSwept_t> SweptStorage = {};
 	inline std::vector<TriggerData_t> TriggerStorage = {};
+	inline std::vector<PasstimeMapGoalData_t> PasstimeGoalStorage = {};
 
 	inline int SavedDefIndexes[3] = {-1,-1,-1};
 	inline int SavedWepIds[3] = {-1,-1,-1};

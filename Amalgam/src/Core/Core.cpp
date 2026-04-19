@@ -155,7 +155,7 @@ void CCore::Load()
 #ifndef TEXTMODE
 	F::Materials.LoadMaterials();
 #endif
-	H::ConVars.Unlock();
+	H::ConVars.Modify(Vars::Misc::Exploits::UnlockCVars.Value);
 #ifndef TEXTMODE
 	H::Fonts.Reload(Vars::Menu::Scale[DEFAULT_BIND]);
 #endif

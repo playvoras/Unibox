@@ -150,6 +150,18 @@ static std::unordered_map<uint32_t, CommandCallback> s_mCommands = {
 		if (auto pNavFile = F::NavEngine.GetNavFile())
 			pNavFile->Write();
 	})
+	AddCommand("cat_refresh_triggers",
+	{
+		if (!SDK::RefreshTriggerStorage(true))
+		{
+			SDK::Output("TriggerStorage", "Refresh failed");
+			return;
+		}
+
+		SDK::Output("TriggerStorage", std::format(
+			"Refresh requested, triggers={} respawn_rooms={}",
+			G::TriggerStorage.size(), F::NavEngine.GetRespawnRooms().size()).c_str());
+	})
 	AddCommand("cat_clearchat", 
 	{
 		I::ClientModeShared->m_pChatElement->SetText("");

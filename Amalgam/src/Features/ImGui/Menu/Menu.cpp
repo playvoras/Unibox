@@ -1488,6 +1488,7 @@ void CMenu::MenuMisc(int iTab)
 					FToggle(Vars::Misc::Exploits::CheatsBypass, FToggleEnum::Right);
 					FToggle(Vars::Misc::Exploits::UnlockCVars, FToggleEnum::Left);
 					FToggle(Vars::Misc::Exploits::EquipRegionUnlock, FToggleEnum::Right);
+					FToggle(Vars::Misc::Exploits::PremiumCraftingBypass, FToggleEnum::Left);
 					FToggle(Vars::Misc::Exploits::BackpackExpander, FToggleEnum::Left);
 					FToggle(Vars::Misc::Exploits::BreakShootSound, FToggleEnum::Right);
 					FTooltip("breaks weapon shoot sound by switching weapons (soldier only)");
@@ -1724,7 +1725,8 @@ void CMenu::MenuMisc(int iTab)
 					FToggle(Vars::Misc::Queueing::ExtendQueue, FToggleEnum::Left);
 					FToggle(Vars::Misc::Queueing::AutoCasualQueue, FToggleEnum::Right);
 					FToggle(Vars::Misc::Queueing::AutoCasualJoin, FToggleEnum::Left);
-					FToggle(Vars::Misc::Queueing::MapPopularizing, FToggleEnum::Right);
+					FToggle(Vars::Misc::Queueing::AutoCompetitiveQueue, FToggleEnum::Right);
+					FToggle(Vars::Misc::Queueing::MapPopularizing, FToggleEnum::Left);
 		            FToggle(Vars::Misc::Queueing::AutoMannUpQueue, FToggleEnum::Left);
 					FToggle(Vars::Misc::Queueing::MapBarBoost, FToggleEnum::Right);
 					PushTransparent(!Vars::Misc::Queueing::AutoCasualQueue.Value);

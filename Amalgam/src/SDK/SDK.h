@@ -147,6 +147,9 @@ namespace SDK
 	bool WeaponDoesNotUseAmmo(CTFWeaponBase* pWeapon, bool bIncludeInfiniteAmmo = true);
 	int GetWeaponMaxReserveAmmo(int iWeaponID, int iDefIdx);
 	std::string GetLevelName();
+	bool BuildTriggerGeometry(TriggerData_t& tTrigger);
+	bool RefreshTriggerStorage(bool bForce = false);
+	int GetPasstimeGoalMapTeam(const Vec3& vOrigin, std::string* pTargetname = nullptr);
 
 	bool CleanScreenshot();
 }

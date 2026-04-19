@@ -97,6 +97,8 @@ private:
 	const std::vector<CachedCrumb_t>* FindConnectionCacheEntry(CNavArea* pArea, CNavArea* pNextArea) const;
 	void AppendCachedCrumbs(CNavArea* pArea, const std::vector<CachedCrumb_t>& vCachedCrumbs);
 	void ConsumeFrontCrumbs(size_t nCount);
+	void ClearPathState();
+	void ClearDebugPaths();
 
 	// Use when something unexpected happens, e.g. vischeck fails
 	void AbandonPath(const std::string& sReason);
@@ -123,8 +125,9 @@ public:
 	std::string GetNavFilePath() const { return m_pMap ? m_pMap->m_sMapName : ""; }
 	bool HasRespawnRooms() const { return !m_vRespawnRooms.empty(); }
 
-	void ClearRespawnRooms() { m_vRespawnRooms.clear(); }
+	void ClearRespawnRooms() { m_vRespawnRooms.clear(); m_vRespawnRoomExitAreas.clear(); m_bUpdatedRespawnRooms = false; }
 	void AddRespawnRoom(int iTeam, TriggerData_t tTrigger) { m_vRespawnRooms.emplace_back(iTeam, tTrigger); }
+	const std::vector<RespawnRoom_t>& GetRespawnRooms() const { return m_vRespawnRooms; }
 
 	std::vector<CNavArea*>* GetRespawnRoomExitAreas() { return &m_vRespawnRoomExitAreas; }
 

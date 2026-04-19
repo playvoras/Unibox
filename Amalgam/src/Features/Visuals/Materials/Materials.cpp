@@ -234,13 +234,17 @@ void CMaterials::UnloadMaterials()
 {
 	m_bLoaded = false;
 
-	for (auto& [_, tMaterial] : m_mMaterials)
-		Remove(tMaterial.m_pMaterial);
-	m_mMaterials.clear();
-	m_mMatList.clear();
-
 	F::Glow.Unload();
 	F::CameraWindow.Unload();
+
+	for (auto& [_, tMaterial] : m_mMaterials)
+	{
+		RemoveVars(tMaterial);
+		Remove(tMaterial.m_pMaterial);
+		tMaterial.m_pMaterial = nullptr;
+	}
+	m_mMaterials.clear();
+	m_mMatList.clear();
 }
 
 void CMaterials::ReloadMaterials()

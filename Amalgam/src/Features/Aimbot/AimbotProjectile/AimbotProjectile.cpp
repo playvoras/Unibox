@@ -6,6 +6,8 @@
 #include "../AutoAirblast/AutoAirblast.h"
 #include "../AutoHeal/AutoHeal.h"
 #include "../../NavBot/BotUtils.h"
+#include "../../NavBot/NavEngine/Controllers/PasstimeController/PasstimeController.h"
+#include <array>
 
 //#define SPLASH_DEBUG1 // normal splash visualization
 //#define SPLASH_DEBUG2 // obstructed splash visualization
@@ -17,12 +19,94 @@
 static std::map<std::string, int> s_mTraceCount = {};
 #endif
 
+namespace
+{
+	constexpr float kPasstimeHoldTime = 0.18f;
+	constexpr float kPasstimeThrowCooldown = 0.35f;
+	constexpr int kPasstimePassPriorityThreshold = 80;
+}
+
 static inline std::vector<Target_t> GetTargets(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 {
 	std::vector<Target_t> vTargets;
 
 	const Vec3 vLocalPos = F::Ticks.GetShootPos();
 	const Vec3 vLocalAngles = I::EngineClient->GetViewAngles();
+
+	if (pWeapon->GetWeaponID() == TF_WEAPON_PASSTIME_GUN && pLocal->m_bHasPasstimeBall())
+	{
+		auto GetNearbyThreatScore = [&](const Vector& vPos) -> float
+			{
+				float flScore = 0.0f;
+				for (auto pEnemyEnt : H::Entities.GetGroup(EntityEnum::PlayerEnemy))
+				{
+					if (!pEnemyEnt || pEnemyEnt->IsDormant())
+						continue;
+
+					auto pEnemy = pEnemyEnt->As<CTFPlayer>();
+					if (!pEnemy || !pEnemy->IsAlive() || F::AimbotGlobal.ShouldIgnore(pEnemy, pLocal, pWeapon))
+						continue;
+
+					const float flDist = std::max(vPos.DistTo(pEnemy->GetAbsOrigin()), 1.0f);
+					if (flDist > 1200.0f)
+						continue;
+
+					flScore += 1.0f / flDist;
+				}
+				return flScore;
+			};
+
+		const int iLocalIndex = pLocal->entindex();
+		const int iPassTarget = pLocal->m_hPasstimePassTarget().GetEntryIndex();
+		const float flMaxPassRange = F::PasstimeController.GetMaxPassRange();
+		const int iOurTeam = pLocal->m_iTeamNum();
+		Vector vGoalPos = {};
+		const bool bHasGoal = F::PasstimeController.GetGoalPos(iOurTeam, pLocal->GetAbsOrigin(), vGoalPos);
+		const float flLocalGoalDist = bHasGoal ? pLocal->GetAbsOrigin().DistTo(vGoalPos) : FLT_MAX;
+		const float flLocalThreat = GetNearbyThreatScore(pLocal->GetAbsOrigin());
+
+		for (auto pEntity : H::Entities.GetGroup(EntityEnum::PlayerTeam))
+		{
+			if (!pEntity || pEntity->IsDormant() || pEntity->entindex() == iLocalIndex)
+				continue;
+
+			auto pTeammate = pEntity->As<CTFPlayer>();
+			if (!pTeammate || !pTeammate->IsAlive() || pTeammate->m_bHasPasstimeBall())
+				continue;
+
+			float flFOVTo = 0.f;
+			Vec3 vPos = {}, vAngleTo = {};
+			if (!F::AimbotGlobal.PlayerBoneInFOV(pTeammate, vLocalPos, vLocalAngles, flFOVTo, vPos, vAngleTo))
+				continue;
+
+			float flDistTo = vLocalPos.DistTo(vPos);
+			if (flMaxPassRange != FLT_MAX && flDistTo > flMaxPassRange * 1.15f)
+				continue;
+
+			int iPriority = 0;
+			if (pTeammate->entindex() == iPassTarget || pTeammate->m_bIsTargetedForPasstimePass())
+				iPriority = std::numeric_limits<int>::max();
+			else
+			{
+				if (bHasGoal)
+				{
+					const float flGoalDist = pTeammate->GetAbsOrigin().DistTo(vGoalPos);
+					const float flGain = std::clamp(flLocalGoalDist - flGoalDist, -2000.f, 2000.f);
+					iPriority += int(flGain * 0.35f);
+				}
+
+				const float flThreatGain = std::clamp((flLocalThreat - GetNearbyThreatScore(pTeammate->GetAbsOrigin())) * 150000.0f, -250.0f, 250.0f);
+				iPriority += int(flThreatGain);
+
+				if (pTeammate->m_iHealth() > pLocal->m_iHealth())
+					iPriority += 20;
+			}
+
+			vTargets.emplace_back(pTeammate, TargetEnum::Player, vPos, vAngleTo, flFOVTo, flDistTo, iPriority);
+		}
+
+		return vTargets;
+	}
 
 	{
 		auto eGroupType = EntityEnum::Invalid;
@@ -174,6 +258,13 @@ static inline std::vector<Target_t> GetTargets(CTFPlayer* pLocal, CTFWeaponBase*
 	}
 
 	return vTargets;
+}
+
+namespace
+{
+	// Passtime goal-throw helpers are intentionally disabled.
+	// Navbot passtime capture now only targets walk-in/endzone goals,
+	// so only teammate pass throwing remains active in projectile aimbot.
 }
 static inline std::vector<Target_t> GetPlayers(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 {
@@ -1911,6 +2002,9 @@ bool CAimbotProjectile::RunMain(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUser
 			case TF_WEAPON_LUNCHBOX:
 				pCmd->buttons |= IN_ATTACK2, pCmd->buttons &= ~IN_ATTACK;
 				break;
+			case TF_WEAPON_PASSTIME_GUN:
+				HandlePasstimeThrowInput(pCmd, tTarget.m_vAngleTo, tTarget.m_pEntity->entindex());
+				break;
 			case TF_WEAPON_ROCKETLAUNCHER:
 			case TF_WEAPON_ROCKETLAUNCHER_DIRECTHIT:
 			case TF_WEAPON_PARTICLE_CANNON:
@@ -1960,6 +2054,9 @@ bool CAimbotProjectile::RunMain(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUser
 void CAimbotProjectile::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 {
 	m_iWeaponID = pWeapon->GetWeaponID();
+	if (m_iWeaponID != TF_WEAPON_PASSTIME_GUN || !pLocal->m_bHasPasstimeBall())
+		m_tPasstimeThrow.Reset();
+
 	int iOldAimType = Vars::Aimbot::General::AimType.Value;
 	bool bOldAutoShoot = Vars::Aimbot::General::AutoShoot.Value;
 	if (F::AutoHeal.m_iAutoSwitch != 0)
@@ -1968,6 +2065,12 @@ void CAimbotProjectile::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd*
 		Vars::Aimbot::General::AutoShoot.Value = true;
 	}
 	const bool bSuccess = RunMain(pLocal, pWeapon, pCmd);
+	if (!bSuccess && m_iWeaponID == TF_WEAPON_PASSTIME_GUN && m_tPasstimeThrow.m_bHolding)
+	{
+		pCmd->buttons &= ~IN_ATTACK;
+		m_tPasstimeThrow.Reset(I::GlobalVars->curtime + kPasstimeThrowCooldown);
+	}
+
 	if (F::AutoHeal.m_iAutoSwitch != 0)
 	{
 		// Force it to switch back if we cant shoot for too long
@@ -2488,3 +2591,184 @@ bool CAimbotProjectile::AutoAirblast(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, 
 
 	return false;
 }
+
+bool CAimbotProjectile::HandlePasstimeThrowInput(CUserCmd* pCmd, const Vec3& vAngle, int iTargetEnt)
+{
+	if (!pCmd)
+		return false;
+
+	const int iRequiredHoldTicks = std::max(2, TIME_TO_TICKS(kPasstimeHoldTime));
+	const float flCurtime = I::GlobalVars->curtime;
+	if (!m_tPasstimeThrow.m_bHolding && m_tPasstimeThrow.m_flCooldownUntil > flCurtime)
+		return false;
+
+	if (m_iMethod == Vars::Aimbot::General::AimTypeEnum::Assistive)
+		return false;
+
+	m_tPasstimeThrow.m_vAngle = vAngle;
+	m_tPasstimeThrow.m_iTargetEnt = iTargetEnt;
+
+	G::Attacking = true;
+	Aim(pCmd, m_tPasstimeThrow.m_vAngle);
+	pCmd->buttons &= ~IN_ATTACK2;
+
+	const float flAimError = Math::CalcFov(pCmd->viewangles, m_tPasstimeThrow.m_vAngle);
+	const float flAlignmentThreshold =
+		m_iMethod == Vars::Aimbot::General::AimTypeEnum::Smooth
+		|| m_iMethod == Vars::Aimbot::General::AimTypeEnum::SmoothVelocity
+		|| m_iMethod == Vars::Aimbot::General::AimTypeEnum::Legit
+		? 4.5f
+		: 2.0f;
+	const bool bAligned = flAimError <= flAlignmentThreshold;
+
+	if (!m_tPasstimeThrow.m_bHolding)
+	{
+		m_tPasstimeThrow.m_bHolding = true;
+		m_tPasstimeThrow.m_iHoldTicks = 1;
+		pCmd->buttons |= IN_ATTACK;
+		if (Vars::Debug::Logging.Value)
+			SDK::Output("PasstimeThrow", std::format("Begin hold: target={} ticks={}", iTargetEnt, m_tPasstimeThrow.m_iHoldTicks).c_str(), { 120, 200, 255 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+		return true;
+	}
+
+	if (m_tPasstimeThrow.m_iHoldTicks < iRequiredHoldTicks)
+	{
+		m_tPasstimeThrow.m_iHoldTicks++;
+		pCmd->buttons |= IN_ATTACK;
+		if (Vars::Debug::Logging.Value)
+			SDK::Output("PasstimeThrow", std::format("Holding: target={} ticks={}/{}", iTargetEnt, m_tPasstimeThrow.m_iHoldTicks, iRequiredHoldTicks).c_str(), { 120, 200, 255 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+		return true;
+	}
+
+	if (!bAligned)
+	{
+		pCmd->buttons |= IN_ATTACK;
+		if (Vars::Debug::Logging.Value)
+			SDK::Output("PasstimeThrow", std::format("Waiting align: target={} error={:.2f}", iTargetEnt, flAimError).c_str(), { 255, 210, 120 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+		return true;
+	}
+
+	pCmd->buttons &= ~IN_ATTACK;
+	if (Vars::Debug::Logging.Value)
+		SDK::Output("PasstimeThrow", std::format("Release: target={} ticks={} error={:.2f}", iTargetEnt, m_tPasstimeThrow.m_iHoldTicks, flAimError).c_str(), { 120, 255, 120 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
+	m_tPasstimeThrow.Reset(flCurtime + kPasstimeThrowCooldown);
+	return true;
+}
+
+bool CAimbotProjectile::AimPasstimePass(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
+{
+	if (!pLocal || !pWeapon || !pCmd
+		|| pWeapon->GetWeaponID() != TF_WEAPON_PASSTIME_GUN
+		|| !pLocal->m_bHasPasstimeBall())
+		return false;
+
+	m_iWeaponID = pWeapon->GetWeaponID();
+	m_iMethod = Vars::Aimbot::General::AimType.Value;
+	if (!m_iMethod || !F::AimbotGlobal.ShouldAim())
+		return false;
+
+	const Vec3 vLocalPos = F::Ticks.GetShootPos();
+	const int iLocalIndex = pLocal->entindex();
+	const int iPassTarget = pLocal->m_hPasstimePassTarget().GetEntryIndex();
+	const float flMaxPassRange = F::PasstimeController.GetMaxPassRange();
+	const int iOurTeam = pLocal->m_iTeamNum();
+
+	auto get_nearby_threat_score = [&](const Vector& vPos) -> float
+		{
+			float flScore = 0.0f;
+			for (auto pEnemyEnt : H::Entities.GetGroup(EntityEnum::PlayerEnemy))
+			{
+				if (!pEnemyEnt || pEnemyEnt->IsDormant())
+					continue;
+
+				auto pEnemy = pEnemyEnt->As<CTFPlayer>();
+				if (!pEnemy || !pEnemy->IsAlive() || F::AimbotGlobal.ShouldIgnore(pEnemy, pLocal, pWeapon))
+					continue;
+
+				const float flDist = std::max(vPos.DistTo(pEnemy->GetAbsOrigin()), 1.0f);
+				if (flDist > 1200.0f)
+					continue;
+
+				flScore += 1.0f / flDist;
+			}
+			return flScore;
+		};
+
+	Vector vGoalPos = {};
+	const bool bHasGoal = F::PasstimeController.GetGoalPos(iOurTeam, pLocal->GetAbsOrigin(), vGoalPos);
+	const float flLocalGoalDist = bHasGoal ? pLocal->GetAbsOrigin().DistTo(vGoalPos) : FLT_MAX;
+	const float flLocalThreat = get_nearby_threat_score(pLocal->GetAbsOrigin());
+
+	std::vector<Target_t> vTargets = {};
+	for (auto pEntity : H::Entities.GetGroup(EntityEnum::PlayerTeam))
+	{
+		if (!pEntity || pEntity->IsDormant() || pEntity->entindex() == iLocalIndex)
+			continue;
+
+		auto pTeammate = pEntity->As<CTFPlayer>();
+		if (!pTeammate || !pTeammate->IsAlive() || pTeammate->m_bHasPasstimeBall())
+			continue;
+
+		const Vec3 vPos = pTeammate->GetCenter();
+		const Vec3 vAngleTo = Math::CalcAngle(vLocalPos, vPos);
+		const float flFOVTo = Math::CalcFov(I::EngineClient->GetViewAngles(), vAngleTo);
+		const float flDistTo = vLocalPos.DistTo(vPos);
+		if (flMaxPassRange != FLT_MAX && flDistTo > flMaxPassRange * 1.15f)
+			continue;
+
+		int iPriority = 0;
+		if (pTeammate->entindex() == iPassTarget || pTeammate->m_bIsTargetedForPasstimePass())
+			iPriority = std::numeric_limits<int>::max();
+		else
+		{
+			if (bHasGoal)
+			{
+				const float flGoalDist = pTeammate->GetAbsOrigin().DistTo(vGoalPos);
+				const float flGain = std::clamp(flLocalGoalDist - flGoalDist, -2000.f, 2000.f);
+				iPriority += int(flGain * 0.35f);
+			}
+
+			const float flThreatGain = std::clamp((flLocalThreat - get_nearby_threat_score(pTeammate->GetAbsOrigin())) * 150000.0f, -250.0f, 250.0f);
+			iPriority += int(flThreatGain);
+
+			if (pTeammate->m_iHealth() > pLocal->m_iHealth())
+				iPriority += 20;
+
+			if (iPriority < kPasstimePassPriorityThreshold)
+				continue;
+		}
+
+		vTargets.emplace_back(pTeammate, TargetEnum::Player, vPos, vAngleTo, flFOVTo, flDistTo, iPriority);
+	}
+
+	if (vTargets.empty())
+		return false;
+
+	std::sort(vTargets.begin(), vTargets.end(), [](const Target_t& a, const Target_t& b)
+		{
+			if (a.m_nPriority != b.m_nPriority)
+				return a.m_nPriority > b.m_nPriority;
+			if (fabsf(a.m_flFOVTo - b.m_flFOVTo) > 0.001f)
+				return a.m_flFOVTo < b.m_flFOVTo;
+			return a.m_flDistTo < b.m_flDistTo;
+		});
+
+	for (auto& tTarget : vTargets)
+	{
+		m_flTimeTo = std::numeric_limits<float>::max();
+		m_vPlayerPath.clear();
+		m_vProjectilePath.clear();
+		m_vBoxes.clear();
+
+		if (CanHit(tTarget, pLocal, pWeapon, false) != 1)
+			continue;
+
+		G::AimTarget = { tTarget.m_pEntity->entindex(), I::GlobalVars->tickcount };
+		G::AimPoint = { m_vTarget, I::GlobalVars->tickcount };
+		return HandlePasstimeThrowInput(pCmd, m_vAngleTo, tTarget.m_pEntity->entindex());
+	}
+
+	return false;
+}
+
+// Passtime goal throwing intentionally disabled.

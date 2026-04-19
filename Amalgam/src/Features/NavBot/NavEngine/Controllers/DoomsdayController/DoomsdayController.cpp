@@ -5,6 +5,23 @@
 #include <string_view>
 #include <format>
 
+namespace
+{
+	Vector AdjustObjectivePosToNav(Vector vPos)
+	{
+		if (!F::NavEngine.IsNavMeshLoaded())
+			return vPos;
+
+		CNavArea* pArea = F::NavEngine.FindClosestNavArea(vPos, false);
+		if (!pArea)
+			return vPos;
+
+		Vector vCorrected = pArea->GetNearestPoint(vPos.Get2D());
+		vCorrected.z = pArea->GetZ(vCorrected.x, vCorrected.y);
+		return vCorrected;
+	}
+}
+
 CCaptureFlag* CDoomsdayController::GetFlag()
 {
 	for (auto pEntity : H::Entities.GetGroup(EntityEnum::WorldObjective))
@@ -20,20 +37,6 @@ CCaptureFlag* CDoomsdayController::GetFlag()
 
 bool GetDoomsdayCapturePos(int iLocalTeam, Vector& vOut)
 {
-	auto AdjustToNav = [](Vector vPos) -> Vector
-		{
-			if (!F::NavEngine.IsNavMeshLoaded())
-				return vPos;
-
-			CNavArea* pArea = F::NavEngine.FindClosestNavArea(vPos, false);
-			if (!pArea)
-				return vPos;
-
-			Vector vCorrected = pArea->GetNearestPoint(vPos.Get2D());
-			vCorrected.z = pArea->GetZ(vCorrected.x, vCorrected.y);
-			return vCorrected;
-		};
-
 	/*
 	// capture area
 	for (auto& tTrigger : G::TriggerStorage)
@@ -91,7 +94,7 @@ bool GetDoomsdayCapturePos(int iLocalTeam, Vector& vOut)
 			if (vPos.IsZero())
 				continue;
 
-			vOut = AdjustToNav(vPos);
+			vOut = AdjustObjectivePosToNav(vPos);
 			if (Vars::Debug::Logging.Value)
 				SDK::Output("DoomsdayController", std::format("GetDoomsdayCapturePos: found rocket via rocket_lid_model ({})", pszModelName).c_str(), { 100, 255, 100 }, OUTPUT_CONSOLE | OUTPUT_DEBUG);
 			return true;

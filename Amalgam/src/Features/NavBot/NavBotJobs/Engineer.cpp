@@ -5,6 +5,35 @@
 #include "../NavEngine/Controllers/CPController/CPController.h"
 #include "../NavEngine/Controllers/PLController/PLController.h"
 
+namespace
+{
+	bool IsBuildSpotFailed(const std::vector<Vector>& vFailedSpots, const Vector& vPos)
+	{
+		for (const auto& vFailed : vFailedSpots)
+		{
+			if (vFailed.DistTo(vPos) < 1.f)
+				return true;
+		}
+
+		return false;
+	}
+
+	bool CanBuildAtPosition(CTFPlayer* pLocal, const Vector& vPos)
+	{
+		CGameTrace trace;
+		CTraceFilterNavigation filter(pLocal);
+		const Vector vMins(-30.f, -30.f, 0.f);
+		const Vector vMaxs(30.f, 30.f, 66.f);
+
+		SDK::TraceHull(vPos + Vector(0, 0, 5), vPos + Vector(0, 0, 5), vMins, vMaxs, MASK_PLAYERSOLID, &filter, &trace);
+		if (trace.DidHit())
+			return false;
+
+		SDK::Trace(vPos + Vector(0, 0, 10), vPos - Vector(0, 0, 10), MASK_PLAYERSOLID, &filter, &trace);
+		return trace.DidHit();
+	}
+}
+
 bool CNavBotEngineer::BuildingNeedsToBeSmacked(CBaseObject* pBuilding)
 {
 	if (!pBuilding || pBuilding->m_bPlacing())
@@ -319,26 +348,14 @@ void CNavBotEngineer::RefreshBuildingSpots(CTFPlayer* pLocal, ClosestEnemy_t& tC
 
 			auto AddSpot = [&](CNavArea* pArea, const Vector& vPos)
 				{
-					for (auto& vFailed : m_vFailedSpots)
-					{
-						if (vFailed.DistTo(vPos) < 1.f)
-							return;
-					}
+					if (IsBuildSpotFailed(m_vFailedSpots, vPos))
+						return;
 
 					if (F::NavEngine.GetPathCost(tFocus.m_pArea, pArea) > 4000.f)
 						return;
 
 					// Check if we can actually build here, sentry size is roughly 40x40x66.
-					CGameTrace trace;
-					CTraceFilterNavigation filter(pLocal);
-					Vector vMins(-30.f, -30.f, 0.f);
-					Vector vMaxs(30.f, 30.f, 66.f);
-					SDK::TraceHull(vPos + Vector(0, 0, 5), vPos + Vector(0, 0, 5), vMins, vMaxs, MASK_PLAYERSOLID, &filter, &trace);
-					if (trace.DidHit())
-						return;
-
-					SDK::Trace(vPos + Vector(0, 0, 10), vPos - Vector(0, 0, 10), MASK_PLAYERSOLID, &filter, &trace);
-					if (!trace.DidHit())
+					if (!CanBuildAtPosition(pLocal, vPos))
 						return;
 
 					float flDistToFocus = vPos.DistTo(tFocus.m_vPos);

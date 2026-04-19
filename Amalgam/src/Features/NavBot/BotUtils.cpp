@@ -8,6 +8,7 @@
 #include "../Aimbot/AutoHeal/AutoHeal.h"
 #include "../Misc/NamedPipe/NamedPipe.h"
 #include "../Ticks/Ticks.h"
+#include "NavRuntime.h"
 
 static bool SmoothAimHasPriority()
 {
@@ -53,21 +54,183 @@ static int GetRangedFallbackSlot(CTFPlayer* pLocal)
 	return SLOT_MELEE;
 }
 
-static bool IsMinigunJumpLocked(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
+static bool SlotUsesAmmo(int iSlot)
 {
-	if (!pLocal || pLocal->m_iClass() != TF_CLASS_HEAVY || !pWeapon || pWeapon->GetWeaponID() != TF_WEAPON_MINIGUN)
+	return G::AmmoInSlot[iSlot].m_bUsesAmmo;
+}
+
+static bool SlotHasClip(int iSlot)
+{
+	return G::AmmoInSlot[iSlot].m_iClip > 0;
+}
+
+static bool SlotHasReserve(int iSlot)
+{
+	return G::AmmoInSlot[iSlot].m_iReserve > 0;
+}
+
+static bool SlotHasAnyAmmo(int iSlot)
+{
+	return !SlotUsesAmmo(iSlot) || SlotHasClip(iSlot) || SlotHasReserve(iSlot);
+}
+
+static bool IsTargetBehindLocal(CTFPlayer* pLocal, CTFPlayer* pTarget)
+{
+	if (!pLocal || !pTarget)
 		return false;
 
-	const int iState = pWeapon->As<CTFMinigun>()->m_iWeaponState();
-	if (iState == AC_STATE_STARTFIRING || iState == AC_STATE_FIRING || iState == AC_STATE_SPINNING)
-		return true;
+	Vec3 vForward{};
+	Math::AngleVectors(pTarget->GetEyeAngles(), &vForward);
 
-	return pCmd && (pCmd->buttons & IN_ATTACK2);
+	Vec3 vToLocal = pLocal->GetAbsOrigin() - pTarget->GetAbsOrigin();
+	vToLocal.z = 0.f;
+	vForward.z = 0.f;
+
+	if (vToLocal.Normalize() <= 0.01f || vForward.Normalize() <= 0.01f)
+		return false;
+
+	return vForward.Dot(vToLocal) < -0.5f;
+}
+
+static int GetSniperTargetHealthTier(const ClosestEnemy_t& tClosestEnemy)
+{
+	if (!tClosestEnemy.m_pPlayer)
+		return -1;
+
+	const int iHealth = tClosestEnemy.m_pPlayer->m_iHealth();
+	const int iMaxHealth = tClosestEnemy.m_pPlayer->GetMaxHealth();
+	if (iHealth < iMaxHealth * 0.35f)
+		return 2;
+
+	return iHealth < iMaxHealth * 0.75f;
+}
+
+static int SelectBestSlot(CTFPlayer* pLocal, const ClosestEnemy_t& tClosestEnemy, int iCurrentSlot, bool bHasMedigunTargets)
+{
+	if (!pLocal)
+		return -1;
+
+	const bool bHasEnemy = tClosestEnemy.m_pPlayer != nullptr;
+	const float flEnemyDist = tClosestEnemy.m_flDist;
+
+	switch (pLocal->m_iClass())
+	{
+	case TF_CLASS_SCOUT:
+	{
+		const bool bPrimaryEmpty = !SlotHasClip(SLOT_PRIMARY);
+		const bool bSecondaryLow = !SlotUsesAmmo(SLOT_SECONDARY) || !SlotHasClip(SLOT_SECONDARY) || G::AmmoInSlot[SLOT_SECONDARY].m_iReserve <= G::AmmoInSlot[SLOT_SECONDARY].m_iMaxReserve / 4;
+		if (bPrimaryEmpty && bSecondaryLow && flEnemyDist <= 200.f)
+			return SLOT_MELEE;
+		if (SlotUsesAmmo(SLOT_SECONDARY) && SlotHasClip(SLOT_SECONDARY) && (flEnemyDist > 750.f || bPrimaryEmpty))
+			return SLOT_SECONDARY;
+		if (SlotHasClip(SLOT_PRIMARY))
+			return SLOT_PRIMARY;
+		break;
+	}
+	case TF_CLASS_HEAVY:
+	{
+		const bool bHolidayPunch = G::SavedDefIndexes[SLOT_MELEE] == Heavy_t_TheHolidayPunch;
+		const bool bPunchTarget = bHolidayPunch && bHasEnemy && !tClosestEnemy.m_pPlayer->IsTaunting() && tClosestEnemy.m_pPlayer->IsInvulnerable() && flEnemyDist < 400.f;
+		if ((!SlotHasClip(SLOT_PRIMARY) && !SlotHasClip(SLOT_SECONDARY) && !SlotHasReserve(SLOT_SECONDARY)) || bPunchTarget)
+			return SLOT_MELEE;
+		if (SlotHasClip(SLOT_PRIMARY))
+			return SLOT_PRIMARY;
+		break;
+	}
+	case TF_CLASS_MEDIC:
+	{
+		auto pSecondaryWeapon = pLocal->GetWeaponFromSlot(SLOT_SECONDARY);
+		if (!pSecondaryWeapon)
+			return -1;
+
+		if (pSecondaryWeapon->As<CWeaponMedigun>()->m_hHealingTarget() || bHasMedigunTargets)
+			return SLOT_SECONDARY;
+		if (!SlotHasClip(SLOT_PRIMARY) || (bHasEnemy && flEnemyDist <= 400.f))
+			return SLOT_MELEE;
+		return SLOT_PRIMARY;
+	}
+	case TF_CLASS_SPY:
+	{
+		const bool bIsBehind = IsTargetBehindLocal(pLocal, tClosestEnemy.m_pPlayer);
+		if (bHasEnemy && flEnemyDist <= 250.f)
+			return SLOT_MELEE;
+		if (bHasEnemy && (pLocal->InCond(TF_COND_STEALTHED) || bIsBehind) && flEnemyDist <= 1000.f)
+			return SLOT_MELEE;
+		if (SlotHasClip(SLOT_PRIMARY) || SlotHasReserve(SLOT_PRIMARY))
+			return SLOT_PRIMARY;
+		break;
+	}
+	case TF_CLASS_SNIPER:
+	{
+		const int iTargetLowHp = GetSniperTargetHealthTier(tClosestEnemy);
+		if ((!SlotHasClip(SLOT_PRIMARY) && !SlotHasClip(SLOT_SECONDARY)) || (bHasEnemy && flEnemyDist <= 200.f))
+			return SLOT_MELEE;
+		if (SlotUsesAmmo(SLOT_SECONDARY) && SlotHasAnyAmmo(SLOT_SECONDARY) && bHasEnemy && flEnemyDist <= 300.f && iTargetLowHp > 1)
+			return SLOT_SECONDARY;
+		if (iCurrentSlot >= SLOT_PRIMARY && iCurrentSlot < SLOT_MELEE && SlotUsesAmmo(iCurrentSlot) && SlotHasClip(iCurrentSlot) && bHasEnemy && flEnemyDist <= 800.f && iTargetLowHp > 1)
+			return iCurrentSlot;
+		if (SlotHasClip(SLOT_PRIMARY))
+			return SLOT_PRIMARY;
+		break;
+	}
+	case TF_CLASS_PYRO:
+	{
+		const bool bSecondaryLow = !SlotHasClip(SLOT_SECONDARY) && SlotUsesAmmo(SLOT_SECONDARY) && G::AmmoInSlot[SLOT_SECONDARY].m_iReserve <= G::AmmoInSlot[SLOT_SECONDARY].m_iMaxReserve / 4;
+		if (!SlotHasClip(SLOT_PRIMARY) && bSecondaryLow && bHasEnemy && flEnemyDist <= 300.f)
+			return SLOT_MELEE;
+		if (SlotHasClip(SLOT_PRIMARY) && bHasEnemy && flEnemyDist <= 400.f)
+			return SLOT_PRIMARY;
+		if (SlotHasClip(SLOT_SECONDARY))
+			return SLOT_SECONDARY;
+		if (SlotHasClip(SLOT_PRIMARY))
+			return SLOT_PRIMARY;
+		break;
+	}
+	case TF_CLASS_SOLDIER:
+	{
+		auto pEnemyWeapon = bHasEnemy ? tClosestEnemy.m_pPlayer->m_hActiveWeapon().Get()->As<CTFWeaponBase>() : nullptr;
+		const bool bEnemyCanAirblast = pEnemyWeapon && pEnemyWeapon->GetWeaponID() == TF_WEAPON_FLAMETHROWER && pEnemyWeapon->m_iItemDefinitionIndex() != Pyro_m_ThePhlogistinator;
+		const bool bEnemyClose = bHasEnemy && flEnemyDist <= 250.f;
+		const bool bPrimaryEmpty = SlotUsesAmmo(SLOT_PRIMARY) && !SlotHasClip(SLOT_PRIMARY) && !SlotHasReserve(SLOT_PRIMARY);
+		if ((iCurrentSlot != SLOT_PRIMARY || bPrimaryEmpty) && bEnemyClose &&
+			(tClosestEnemy.m_pPlayer->m_iHealth() < 80 ? !SlotHasClip(SLOT_SECONDARY) : tClosestEnemy.m_pPlayer->m_iHealth() >= 150 || G::AmmoInSlot[SLOT_SECONDARY].m_iClip < 2))
+			return SLOT_MELEE;
+		if ((!SlotUsesAmmo(SLOT_PRIMARY) || SlotHasClip(SLOT_SECONDARY)) && (bEnemyCanAirblast || (bHasEnemy && flEnemyDist <= 350.f && tClosestEnemy.m_pPlayer->m_iHealth() <= 125)))
+			return SLOT_SECONDARY;
+		if (!SlotUsesAmmo(SLOT_PRIMARY) || SlotHasClip(SLOT_PRIMARY))
+			return SLOT_PRIMARY;
+		break;
+	}
+	case TF_CLASS_DEMOMAN:
+	{
+		if (!SlotHasClip(SLOT_PRIMARY) && (!SlotUsesAmmo(SLOT_SECONDARY) || !SlotHasClip(SLOT_SECONDARY)) && bHasEnemy && flEnemyDist <= 200.f)
+			return SLOT_MELEE;
+		if (SlotHasClip(SLOT_PRIMARY) && flEnemyDist <= 800.f)
+			return SLOT_PRIMARY;
+		if (SlotUsesAmmo(SLOT_SECONDARY) && (SlotHasClip(SLOT_SECONDARY) || G::AmmoInSlot[SLOT_SECONDARY].m_iReserve >= G::AmmoInSlot[SLOT_SECONDARY].m_iMaxReserve / 2))
+			return SLOT_SECONDARY;
+		break;
+	}
+	case TF_CLASS_ENGINEER:
+	{
+		if (SlotUsesAmmo(SLOT_PRIMARY) && !SlotHasClip(SLOT_PRIMARY) && !SlotHasClip(SLOT_SECONDARY) && bHasEnemy && flEnemyDist <= 200.f)
+			return SLOT_MELEE;
+		if (SlotHasAnyAmmo(SLOT_PRIMARY) && bHasEnemy && flEnemyDist <= 1000.f)
+			return SLOT_PRIMARY;
+		if (!SlotUsesAmmo(SLOT_PRIMARY) || SlotHasClip(SLOT_SECONDARY) || SlotHasReserve(SLOT_SECONDARY))
+			return SLOT_SECONDARY;
+		break;
+	}
+	default:
+		break;
+	}
+
+	return -1;
 }
 
 bool CBotUtils::HasMedigunTargets(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 {
-	if (!Vars::Aimbot::Healing::AutoHeal.Value)
+	if (!pLocal || !pWeapon || !Vars::Aimbot::Healing::AutoHeal.Value)
 		return false;
 
 	Vec3 vShootPos = F::Ticks.GetShootPos();
@@ -217,7 +380,7 @@ bool CBotUtils::GetDormantOrigin(int iIndex, Vector* pOut)
 
 ClosestEnemy_t CBotUtils::UpdateCloseEnemies(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 {
-	m_vCloseEnemies.clear();
+	ClosestEnemy_t tClosestEnemy{};
 
 	Vector vLocalOrigin = pLocal->GetAbsOrigin();
 	for (auto pEntity : H::Entities.GetGroup(EntityEnum::PlayerEnemy))
@@ -228,18 +391,17 @@ ClosestEnemy_t CBotUtils::UpdateCloseEnemies(CTFPlayer* pLocal, CTFWeaponBase* p
 			continue;
 
 		Vector vOrigin = pPlayer->GetAbsOrigin();
-		m_vCloseEnemies.emplace_back(iEntIndex, pPlayer, vOrigin, vLocalOrigin.DistTo(vOrigin));
+		const float flDistance = vLocalOrigin.DistTo(vOrigin);
+		if (flDistance >= tClosestEnemy.m_flDist)
+			continue;
+
+		tClosestEnemy.m_iEntIdx = iEntIndex;
+		tClosestEnemy.m_pPlayer = pPlayer;
+		tClosestEnemy.m_vOrigin = vOrigin;
+		tClosestEnemy.m_flDist = flDistance;
 	}
 
-	std::sort(m_vCloseEnemies.begin(), m_vCloseEnemies.end(), [](const ClosestEnemy_t& a, const ClosestEnemy_t& b) -> bool
-		{
-			return a.m_flDist < b.m_flDist;
-		});
-
-	if (m_vCloseEnemies.empty())
-		return {};
-
-	return m_vCloseEnemies.front();
+	return tClosestEnemy;
 }
 
 
@@ -257,130 +419,9 @@ void CBotUtils::UpdateBestSlot(CTFPlayer* pLocal)
 		return;
 	}
 
-	switch (pLocal->m_iClass())
-	{
-	case TF_CLASS_SCOUT:
-	{
-		if ((!G::AmmoInSlot[SLOT_PRIMARY].m_iClip &&
-			(!G::AmmoInSlot[SLOT_SECONDARY].m_bUsesAmmo || !G::AmmoInSlot[SLOT_SECONDARY].m_iClip || G::AmmoInSlot[SLOT_SECONDARY].m_iReserve <= G::AmmoInSlot[SLOT_SECONDARY].m_iMaxReserve / 4)) &&
-			m_tClosestEnemy.m_flDist <= 200.f)
-			m_iBestSlot = SLOT_MELEE;
-		else if (G::AmmoInSlot[SLOT_SECONDARY].m_bUsesAmmo && G::AmmoInSlot[SLOT_SECONDARY].m_iClip && (m_tClosestEnemy.m_flDist > 750.f || !G::AmmoInSlot[SLOT_PRIMARY].m_iClip))
-			m_iBestSlot = SLOT_SECONDARY;
-		else if (G::AmmoInSlot[SLOT_PRIMARY].m_iClip)
-			m_iBestSlot = SLOT_PRIMARY;
-		break;
-	}
-	case TF_CLASS_HEAVY:
-	{
-		if (!G::AmmoInSlot[SLOT_PRIMARY].m_iClip && (!G::AmmoInSlot[SLOT_SECONDARY].m_iClip && G::AmmoInSlot[SLOT_SECONDARY].m_iReserve == 0) ||
-			(G::SavedDefIndexes[SLOT_MELEE] == Heavy_t_TheHolidayPunch &&
-			(m_tClosestEnemy.m_pPlayer && !m_tClosestEnemy.m_pPlayer->IsTaunting() && m_tClosestEnemy.m_pPlayer->IsInvulnerable()) && m_tClosestEnemy.m_flDist < 400.f))
-			m_iBestSlot = SLOT_MELEE;
-		else if (G::AmmoInSlot[SLOT_PRIMARY].m_iClip)
-			m_iBestSlot = SLOT_PRIMARY;
-		break;
-	}
-	case TF_CLASS_MEDIC:
-	{
-		auto pSecondaryWeapon = pLocal->GetWeaponFromSlot(SLOT_SECONDARY);
-		if (!pSecondaryWeapon)
-			return;
-
-		if (pSecondaryWeapon->As<CWeaponMedigun>()->m_hHealingTarget() || HasMedigunTargets(pLocal, pSecondaryWeapon))
-			m_iBestSlot = SLOT_SECONDARY;
-		else if (!G::AmmoInSlot[SLOT_PRIMARY].m_iClip || (m_tClosestEnemy.m_flDist <= 400.f && m_tClosestEnemy.m_pPlayer))
-			m_iBestSlot = SLOT_MELEE;
-		else
-			m_iBestSlot = SLOT_PRIMARY;
-		break;
-	}
-	case TF_CLASS_SPY:
-	{
-		bool bIsBehind = false;
-		if (m_tClosestEnemy.m_pPlayer)
-		{
-			Vec3 vForward;
-			Math::AngleVectors(m_tClosestEnemy.m_pPlayer->GetEyeAngles(), &vForward);
-			Vec3 vToLocal = pLocal->GetAbsOrigin() - m_tClosestEnemy.m_pPlayer->GetAbsOrigin();
-			vToLocal.z = 0; vToLocal.Normalize();
-			vForward.z = 0; vForward.Normalize();
-			if (vForward.Dot(vToLocal) < -0.5f)
-				bIsBehind = true;
-		}
-
-		if (m_tClosestEnemy.m_flDist <= 250.f && m_tClosestEnemy.m_pPlayer)
-			m_iBestSlot = SLOT_MELEE;
-		else if (m_tClosestEnemy.m_pPlayer && (pLocal->InCond(TF_COND_STEALTHED) || bIsBehind) && m_tClosestEnemy.m_flDist <= 1000.f)
-			m_iBestSlot = SLOT_MELEE;
-		else if (G::AmmoInSlot[SLOT_PRIMARY].m_iClip || G::AmmoInSlot[SLOT_PRIMARY].m_iReserve)
-			m_iBestSlot = SLOT_PRIMARY;
-		break;
-	}
-	case TF_CLASS_SNIPER:
-	{
-		int iPlayerLowHp = m_tClosestEnemy.m_pPlayer ? (m_tClosestEnemy.m_pPlayer->m_iHealth() < m_tClosestEnemy.m_pPlayer->GetMaxHealth() * 0.35f ? 2 : m_tClosestEnemy.m_pPlayer->m_iHealth() < m_tClosestEnemy.m_pPlayer->GetMaxHealth() * 0.75f) : -1;
-		if (!G::AmmoInSlot[SLOT_PRIMARY].m_iClip && !G::AmmoInSlot[SLOT_SECONDARY].m_iClip || (m_tClosestEnemy.m_flDist <= 200.f && m_tClosestEnemy.m_pPlayer))
-			m_iBestSlot = SLOT_MELEE;
-		else if (G::AmmoInSlot[SLOT_SECONDARY].m_bUsesAmmo && (G::AmmoInSlot[SLOT_SECONDARY].m_iClip || G::AmmoInSlot[SLOT_SECONDARY].m_iReserve) && (m_tClosestEnemy.m_flDist <= 300.f && iPlayerLowHp > 1))
-			m_iBestSlot = SLOT_SECONDARY;
-		// Keep currently selected weapon if the target we previosly tried shooting at is running away
-		else if (m_iCurrentSlot < 2 && m_iCurrentSlot != -1 && G::AmmoInSlot[m_iCurrentSlot].m_bUsesAmmo && G::AmmoInSlot[m_iCurrentSlot].m_iClip && (m_tClosestEnemy.m_flDist <= 800.f && iPlayerLowHp > 1))
-			break;
-		else if (G::AmmoInSlot[SLOT_PRIMARY].m_iClip)
-			m_iBestSlot = SLOT_PRIMARY;
-		break;
-	}
-	case TF_CLASS_PYRO:
-	{
-		if (!G::AmmoInSlot[SLOT_PRIMARY].m_iClip && (!G::AmmoInSlot[SLOT_SECONDARY].m_iClip && G::AmmoInSlot[SLOT_SECONDARY].m_bUsesAmmo &&
-			G::AmmoInSlot[SLOT_SECONDARY].m_iReserve <= G::AmmoInSlot[SLOT_SECONDARY].m_iMaxReserve / 4) &&
-			(m_tClosestEnemy.m_pPlayer && m_tClosestEnemy.m_flDist <= 300.f))
-			m_iBestSlot = SLOT_MELEE;
-		else if (G::AmmoInSlot[SLOT_PRIMARY].m_iClip && (m_tClosestEnemy.m_pPlayer && m_tClosestEnemy.m_flDist <= 400.f))
-			m_iBestSlot = SLOT_PRIMARY;
-		else if (G::AmmoInSlot[SLOT_SECONDARY].m_iClip)
-			m_iBestSlot = SLOT_SECONDARY;
-		else if (G::AmmoInSlot[SLOT_PRIMARY].m_iClip)
-			m_iBestSlot = SLOT_PRIMARY;
-		break;
-	}
-	case TF_CLASS_SOLDIER:
-	{
-		auto pEnemyWeapon = m_tClosestEnemy.m_pPlayer ? m_tClosestEnemy.m_pPlayer->m_hActiveWeapon().Get()->As<CTFWeaponBase>() : nullptr;
-		bool bEnemyCanAirblast = pEnemyWeapon && pEnemyWeapon->GetWeaponID() == TF_WEAPON_FLAMETHROWER && pEnemyWeapon->m_iItemDefinitionIndex() != Pyro_m_ThePhlogistinator;
-		bool bEnemyClose = m_tClosestEnemy.m_pPlayer && m_tClosestEnemy.m_flDist <= 250.f;
-		if ((m_iCurrentSlot != SLOT_PRIMARY || G::AmmoInSlot[SLOT_PRIMARY].m_bUsesAmmo && !G::AmmoInSlot[SLOT_PRIMARY].m_iClip && !G::AmmoInSlot[SLOT_PRIMARY].m_iReserve) && bEnemyClose && (m_tClosestEnemy.m_pPlayer->m_iHealth() < 80 ? !G::AmmoInSlot[SLOT_SECONDARY].m_iClip : m_tClosestEnemy.m_pPlayer->m_iHealth() >= 150 || G::AmmoInSlot[SLOT_SECONDARY].m_iClip < 2))
-			m_iBestSlot = SLOT_MELEE;
-		else if ((!G::AmmoInSlot[SLOT_PRIMARY].m_bUsesAmmo || G::AmmoInSlot[SLOT_SECONDARY].m_iClip) && (bEnemyCanAirblast || (m_tClosestEnemy.m_flDist <= 350.f && m_tClosestEnemy.m_pPlayer && m_tClosestEnemy.m_pPlayer->m_iHealth() <= 125)))
-			m_iBestSlot = SLOT_SECONDARY;
-		else if (!G::AmmoInSlot[SLOT_PRIMARY].m_bUsesAmmo || G::AmmoInSlot[SLOT_PRIMARY].m_iClip)
-			m_iBestSlot = SLOT_PRIMARY;
-		break;
-	}
-	case TF_CLASS_DEMOMAN:
-	{
-		if (!G::AmmoInSlot[SLOT_PRIMARY].m_iClip && (!G::AmmoInSlot[SLOT_SECONDARY].m_bUsesAmmo || !G::AmmoInSlot[SLOT_SECONDARY].m_iClip) && (m_tClosestEnemy.m_pPlayer && m_tClosestEnemy.m_flDist <= 200.f))
-			m_iBestSlot = SLOT_MELEE;
-		else if (G::AmmoInSlot[SLOT_PRIMARY].m_iClip && (m_tClosestEnemy.m_flDist <= 800.f))
-			m_iBestSlot = SLOT_PRIMARY;
-		else if (G::AmmoInSlot[SLOT_SECONDARY].m_bUsesAmmo && (G::AmmoInSlot[SLOT_SECONDARY].m_iClip || G::AmmoInSlot[SLOT_SECONDARY].m_iReserve >= G::AmmoInSlot[SLOT_SECONDARY].m_iMaxReserve / 2))
-			m_iBestSlot = SLOT_SECONDARY;
-		break;
-	}
-	case TF_CLASS_ENGINEER:
-	{
-		if (G::AmmoInSlot[SLOT_PRIMARY].m_bUsesAmmo && !G::AmmoInSlot[SLOT_PRIMARY].m_iClip && !G::AmmoInSlot[SLOT_SECONDARY].m_iClip && (m_tClosestEnemy.m_pPlayer && m_tClosestEnemy.m_flDist <= 200.f))
-			m_iBestSlot = SLOT_MELEE;
-		else if ((!G::AmmoInSlot[SLOT_PRIMARY].m_bUsesAmmo || G::AmmoInSlot[SLOT_PRIMARY].m_iClip || G::AmmoInSlot[SLOT_PRIMARY].m_iReserve) && (m_tClosestEnemy.m_pPlayer && m_tClosestEnemy.m_flDist <= 1000.f))
-			m_iBestSlot = SLOT_PRIMARY;
-		else if (!G::AmmoInSlot[SLOT_PRIMARY].m_bUsesAmmo || G::AmmoInSlot[SLOT_SECONDARY].m_iClip || G::AmmoInSlot[SLOT_SECONDARY].m_iReserve)
-			m_iBestSlot = SLOT_SECONDARY;
-		break;
-	}
-	default:
-		break;
-	}
+	const bool bHasMedigunTargets = pLocal->m_iClass() == TF_CLASS_MEDIC &&
+		HasMedigunTargets(pLocal, pLocal->GetWeaponFromSlot(SLOT_SECONDARY));
+	m_iBestSlot = SelectBestSlot(pLocal, m_tClosestEnemy, m_iCurrentSlot, bHasMedigunTargets);
 
 	if (m_iBestSlot == SLOT_MELEE && !pLocal->GetWeaponFromSlot(SLOT_MELEE))
 		m_iBestSlot = GetRangedFallbackSlot(pLocal);
@@ -398,22 +439,16 @@ void CBotUtils::SetSlot(CTFPlayer* pLocal, int iSlot)
 
 void CBotUtils::DoSlowAim(Vec3& vWishAngles, float flSpeed, Vec3 vPreviousAngles)
 {
-	// Yaw
-	if (vPreviousAngles.y != vWishAngles.y)
-	{
-		Vec3 vSlowDelta = vWishAngles - vPreviousAngles;
+	float flAimSpeed = std::max(flSpeed, 1.f);
+	Vec3 vSlowDelta = vWishAngles.DeltaAngle(vPreviousAngles);
 
-		while (vSlowDelta.y > 180)
-			vSlowDelta.y -= 360;
-		while (vSlowDelta.y < -180)
-			vSlowDelta.y += 360;
+	const float flPitchStep = std::clamp(std::fabs(vSlowDelta.x) / (flAimSpeed * 1.35f), 0.1f, std::max(0.35f, 18.f / std::sqrt(flAimSpeed)));
+	const float flYawStep = std::clamp(std::fabs(vSlowDelta.y) / flAimSpeed, 0.15f, std::max(0.5f, 32.f / std::sqrt(flAimSpeed)));
 
-		vSlowDelta /= flSpeed;
-		vWishAngles = vPreviousAngles + vSlowDelta;
-
-		// Clamp as we changed angles
-		Math::ClampAngles(vWishAngles);
-	}
+	vPreviousAngles.x += std::clamp(vSlowDelta.x, -flPitchStep, flPitchStep);
+	vPreviousAngles.y += std::clamp(vSlowDelta.y, -flYawStep, flYawStep);
+	vWishAngles = vPreviousAngles;
+	Math::ClampAngles(vWishAngles);
 }
 
 void CBotUtils::LookAtPath(CUserCmd* pCmd, Vec2 vDest, Vec3 vLocalEyePos, bool bSilent)
@@ -472,6 +507,8 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 	Vec3 vEye = pLocal->GetEyePosition();
 	Vec3 vLook = vDest;
 	bool bEnemyLock = false;
+	const int iPreviousTarget = tState.m_iLastTarget;
+	int iTrackedTarget = -1;
 
 	// 1. look at visible enemies
 
@@ -544,11 +581,14 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 			vLook = pBestEnemy->As<CTFPlayer>()->GetEyePosition();
 			// look slightly below head (chest/neck)
 			vLook.z -= 10.f;
+			Vec3 vTargetVelocity = pBestEnemy->GetAbsVelocity();
+			const float flLeadTime = std::clamp(vEye.DistTo(vLook) / 2800.f, 0.015f, 0.08f);
+			vLook += vTargetVelocity * flLeadTime;
 		}
 		else
 			vLook = pBestEnemy->GetCenter();
 
-		tState.m_iLastTarget = pBestEnemy->entindex();
+		iTrackedTarget = pBestEnemy->entindex();
 		tState.m_flLastSeen = I::GlobalVars->curtime;
 		tState.m_vLastPos = vLook;
 		bEnemyLock = true;
@@ -557,6 +597,7 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 	{
 		// look at last known position for a bit
 		vLook = tState.m_vLastPos;
+		iTrackedTarget = iPreviousTarget;
 		bEnemyLock = true;
 	}
 	else
@@ -580,7 +621,7 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 				float flBestDist = trace.fraction * 500.f;
 				Vec3 vBestForward = vForward;
 
-				for (float flOffset : { -15.f, 15.f, -30.f, 30.f, -45.f, 45.f, -60.f, 60.f, -75.f, 75.f, -90.f, 90.f })
+				for (float flOffset : { -15.f, 15.f, -30.f, 30.f, -45.f, 45.f, -60.f, 60.f, -75.f, 75.f })
 				{
 					Vec3 vTestAngles = Math::CalcAngle(vEye, vLook);
 					vTestAngles.y += flOffset;
@@ -588,10 +629,15 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 					Vec3 vTestForward;
 					Math::AngleVectors(vTestAngles, &vTestForward);
 
+					float flForwardDot = std::clamp(vForward.Dot(vTestForward), -1.f, 1.f);
+					if (flForwardDot < 0.1f)
+						continue;
+
 					SDK::Trace(vEye, vEye + vTestForward * 500.f, MASK_SHOT, &filter, &trace);
-					if (trace.fraction * 500.f > flBestDist)
+					float flTraceScore = trace.fraction * 500.f * Math::RemapVal(flForwardDot, 0.1f, 1.f, 0.55f, 1.f);
+					if (flTraceScore > flBestDist)
 					{
-						flBestDist = trace.fraction * 500.f;
+						flBestDist = flTraceScore;
 						vBestForward = vTestForward;
 					}
 				}
@@ -613,6 +659,8 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 		}
 	}
 
+	tState.m_iLastTarget = iTrackedTarget;
+
 	Vec3 vFocus;
 	if (bEnemyLock)
 	{
@@ -631,7 +679,8 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 	Math::ClampAngles(vDesired);
 
 	const float flTargetDelta = tState.m_vLastTarget.IsZero() ? FLT_MAX : tState.m_vLastTarget.DistToSqr(vFocus);
-	if (!tState.m_bInitialized || !std::isfinite(flTargetDelta) || flTargetDelta > 4096.f)
+	const float flDesiredDelta = tState.m_bInitialized ? Math::CalcFov(tState.m_vAnchor, vDesired) : FLT_MAX;
+	if (!tState.m_bInitialized || !std::isfinite(flTargetDelta) || !std::isfinite(flDesiredDelta) || flDesiredDelta > 120.f || (!bEnemyLock && flTargetDelta > powf(1200.f, 2)))
 	{
 		tState.m_bInitialized = true;
 		tState.m_vAnchor = vDesired;
@@ -641,11 +690,14 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 		tState.m_vGlanceCurrent = {};
 		tState.m_vGlanceGoal = {};
 		tState.m_flNextOffset = SDK::RandomFloat(0.6f, 1.8f);
+		tState.m_flAcquireDuration = SDK::RandomFloat(0.09f, 0.18f);
+		tState.m_flEnemyBlend = bEnemyLock ? 1.f : 0.f;
 		tState.m_flPhase = SDK::RandomFloat(0.f, 6.2831853f);
 		tState.m_flNextGlance = SDK::RandomFloat(1.4f, 3.0f);
 		tState.m_flGlanceDuration = SDK::RandomFloat(0.3f, 0.55f);
 		tState.m_bGlancing = false;
 		tState.m_tOffsetTimer.Update();
+		tState.m_tAcquireTimer.Update();
 		tState.m_tGlanceTimer.Update();
 		tState.m_tGlanceCooldown.Update();
 
@@ -654,6 +706,17 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 	}
 	else
 		tState.m_vLastTarget = vFocus;
+
+	if (bEnemyLock && iTrackedTarget != -1 && iTrackedTarget != iPreviousTarget)
+	{
+		tState.m_flAcquireDuration = SDK::RandomFloat(0.09f, 0.18f);
+		tState.m_tAcquireTimer.Update();
+		tState.m_flEnemyBlend = std::min(tState.m_flEnemyBlend, 0.2f);
+	}
+
+	const bool bAcquireComplete = !bEnemyLock || tState.m_tAcquireTimer.Run(tState.m_flAcquireDuration);
+	const float flEnemyBlendGoal = bEnemyLock ? (bAcquireComplete ? 1.f : 0.42f) : 0.f;
+	tState.m_flEnemyBlend = Math::Lerp(tState.m_flEnemyBlend, flEnemyBlendGoal, bEnemyLock ? 0.18f : 0.08f);
 
 	float flAnchorDelta = Math::CalcFov(tState.m_vAnchor, vDesired);
 	if (!std::isfinite(flAnchorDelta) || flAnchorDelta > 120.f)
@@ -664,7 +727,7 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 		if (bEnemyLock)
 		{
 			float flProgressive = std::pow(std::clamp(flAnchorDelta / 30.f, 0.f, 1.f), 1.5f);
-			flAnchorBlend = std::clamp(0.08f + flProgressive * 0.42f, 0.08f, 0.5f);
+			flAnchorBlend = std::clamp((0.08f + flProgressive * 0.42f) * std::clamp(tState.m_flEnemyBlend, 0.2f, 1.f), 0.04f, 0.5f);
 		}
 		tState.m_vAnchor = tState.m_vAnchor.LerpAngle(vDesired, flAnchorBlend);
 	}
@@ -685,7 +748,8 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 		tState.m_flNextOffset = SDK::RandomFloat(0.65f, 1.95f);
 	}
 
-	tState.m_vOffset = tState.m_vOffset.LerpAngle(tState.m_vOffsetGoal, 0.1f);
+	float flOffsetBlend = bEnemyLock ? Math::Lerp(0.16f, 0.08f, std::clamp(tState.m_flEnemyBlend, 0.f, 1.f)) : 0.1f;
+	tState.m_vOffset = tState.m_vOffset.LerpAngle(tState.m_vOffsetGoal, flOffsetBlend);
 
 	// Active Scanning for open spaces
 	if (!bEnemyLock && !tState.m_bGlancing && flVelocity2D > 50.f && tState.m_tScanTimer.Run(tState.m_flNextScan))
@@ -696,6 +760,7 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 		vMoveDir.Normalize();
 		Vec3 vMoveAngles = Math::CalcAngle(Vec3(), vMoveDir);
 
+		float flBestTraceScore = 0.f;
 		float flBestTraceDist = 0.f;
 		Vec3 vBestScanDir = {};
 
@@ -708,6 +773,10 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 			Vec3 vForward;
 			Math::AngleVectors(vScanAngles, &vForward);
 
+			float flForwardDot = std::clamp(vMoveDir.Dot(vForward), -1.f, 1.f);
+			if (flForwardDot < 0.2f)
+				continue;
+
 			CGameTrace trace;
 			CTraceFilterHitscan filter(pLocal);
 			SDK::Trace(vEye, vEye + vForward * 1000.f, MASK_SHOT, &filter, &trace);
@@ -715,9 +784,12 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 			if (Vars::Misc::Movement::BotUtils::LookAtPathDebug.Value)
 				G::LineStorage.emplace_back(std::pair<Vec3, Vec3>(vEye, trace.endpos), I::GlobalVars->curtime + 1.f, Color_t{ 255, 255, 255, 100 }, false);
 
-			if (trace.fraction * 1000.f > flBestTraceDist)
+			float flTraceDist = trace.fraction * 1000.f;
+			float flTraceScore = flTraceDist * Math::RemapVal(flForwardDot, 0.2f, 1.f, 0.5f, 1.f);
+			if (flTraceScore > flBestTraceScore)
 			{
-				flBestTraceDist = trace.fraction * 1000.f;
+				flBestTraceScore = flTraceScore;
+				flBestTraceDist = flTraceDist;
 				vBestScanDir = vForward;
 			}
 		}
@@ -729,7 +801,7 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 		{
 			tState.m_vGlanceGoal = Math::CalcAngle(vEye, vEye + vBestScanDir * 500.f);
 			tState.m_bGlancing = true;
-			tState.m_flGlanceDuration = SDK::RandomFloat(2.0f, 3.2f);
+			tState.m_flGlanceDuration = SDK::RandomFloat(1.2f, 2.0f);
 			tState.m_tGlanceTimer.Update();
 		}
 	}
@@ -748,7 +820,7 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 	{
 		tState.m_bGlancing = true;
 		tState.m_flGlanceDuration = SDK::RandomFloat(0.28f, 0.52f);
-		float flYawGlance = SDK::RandomFloat(16.f, 38.f) * (SDK::RandomInt(0, 1) == 0 ? -1.f : 1.f);
+		float flYawGlance = SDK::RandomFloat(10.f, 24.f) * (SDK::RandomInt(0, 1) == 0 ? -1.f : 1.f);
 		tState.m_vGlanceGoal = { SDK::RandomFloat(-3.5f, 4.5f), flYawGlance, 0.f };
 		tState.m_tGlanceTimer.Update();
 	}
@@ -769,8 +841,9 @@ void CBotUtils::LookLegit(CTFPlayer* pLocal, CUserCmd* pCmd, const Vec3& vDest, 
 
 	if (bEnemyLock)
 	{
-		float flDeltaX = SDK::RandomFloat(-1.f, 1.f) * 0.4f;
-		float flDeltaY = SDK::RandomFloat(-1.f, 1.f) * 0.4f;
+		float flErrorScale = Math::Lerp(0.55f, 0.25f, std::clamp(tState.m_flEnemyBlend, 0.f, 1.f));
+		float flDeltaX = SDK::RandomFloat(-1.f, 1.f) * flErrorScale;
+		float flDeltaY = SDK::RandomFloat(-1.f, 1.f) * flErrorScale;
 		tState.m_flErrorVelocityX += (flDeltaX - tState.m_flErrorX) * 0.12f;
 		tState.m_flErrorVelocityY += (flDeltaY - tState.m_flErrorY) * 0.12f;
 		tState.m_flErrorVelocityX *= 0.82f;
@@ -1198,7 +1271,6 @@ void CBotUtils::Reset()
 {
 	m_mAutoScopeCache.clear();
 	m_mAutoRevCache.clear();
-	m_vCloseEnemies.clear();
 	m_tClosestEnemy = {};
 	m_iBestSlot = -1;
 	m_iCurrentSlot = -1;
@@ -1218,7 +1290,7 @@ bool CBotUtils::IsSurfaceWalkable(const Vector& vNormal)
 bool CBotUtils::SmartJump(CTFPlayer* pLocal, CUserCmd* pCmd)
 {
 	if (!pLocal || !pLocal->IsAlive() || !Vars::Misc::Movement::NavBot::SmartJump.Value) return false;
-	if (IsMinigunJumpLocked(pLocal, H::Entities.GetWeapon(), pCmd))
+	if (NavRuntime::IsMinigunJumpLocked(H::Entities.GetWeapon(), pCmd))
 		return false;
 
 	if (pLocal->OnSolid())
@@ -1318,7 +1390,7 @@ void CBotUtils::HandleSmartJump(CTFPlayer* pLocal, CUserCmd* pCmd)
 		return;
 	}
 
-	if (IsMinigunJumpLocked(pLocal, H::Entities.GetWeapon(), pCmd))
+	if (NavRuntime::IsMinigunJumpLocked(H::Entities.GetWeapon(), pCmd))
 	{
 		pCmd->buttons &= ~IN_JUMP;
 		m_eJumpState = STATE_AWAITING_JUMP;

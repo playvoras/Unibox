@@ -2,7 +2,7 @@
 
 #include "../../Definitions/Interfaces/ICVar.h"
 
-bool CConVars::Unlock()
+bool CConVars::UnlockInternal()
 {
 	if (!m_bUnlocked)
 	{
@@ -20,7 +20,7 @@ bool CConVars::Unlock()
 	return false;
 }
 
-bool CConVars::Restore()
+bool CConVars::RestoreInternal()
 {
 	if (m_bUnlocked)
 	{
@@ -34,19 +34,32 @@ bool CConVars::Restore()
 	return false;
 }
 
+bool CConVars::Unlock()
+{
+	std::lock_guard<std::mutex> lock(m_Mutex);
+	return UnlockInternal();
+}
+
+bool CConVars::Restore()
+{
+	std::lock_guard<std::mutex> lock(m_Mutex);
+	return RestoreInternal();
+}
+
 bool CConVars::Modify(bool bUnlock)
 {
+	std::lock_guard<std::mutex> lock(m_Mutex);
+
 	if (bUnlock == m_bUnlocked)
 		return false;
 
-	if (bUnlock)
-		return Unlock();
-	else
-		return Restore();
+	return bUnlock ? UnlockInternal() : RestoreInternal();
 }
 
 ConVar* CConVars::FindVar(const char* sCVar)
 {
+	std::lock_guard<std::mutex> lock(m_Mutex);
+
 	auto uHash = FNV1A::Hash32(sCVar);
 	if (!m_mCVarMap.contains(uHash))
 		m_mCVarMap[uHash] = I::CVar->FindVar(sCVar);

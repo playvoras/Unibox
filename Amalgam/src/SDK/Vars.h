@@ -1173,6 +1173,7 @@ I dont think this is a good idea to disable simulations completely:
 			CVar(CheatsBypass, "Cheats bypass", false);
 			CVar(UnlockCVars, "Unlock CVars", true);
 			CVar(EquipRegionUnlock, "Equip region unlock", false);
+			CVar(PremiumCraftingBypass, "Premium crafting bypass", false);
 			CVar(BreakShootSound, "Break shoot sound", false);
 			CVar(BackpackExpander, "Backpack expander", false);
 			CVar(PingReducer, "Ping reducer", false);
@@ -1231,6 +1232,7 @@ I dont think this is a good idea to disable simulations completely:
 			CVar(ExtendQueue, "Extend queue", false);
 			CVar(AutoCasualQueue, "Auto casual queue", false);
 			CVar(AutoCasualJoin, "Auto casual join", false);
+			CVar(AutoCompetitiveQueue, "Auto competitive queue", false);
 			CVar(MapPopularizing, "Map popularizing mode", false);
 			CVar(MapBarBoost, "Boost Playercount Visualizer", false);
 			CVar(AutoAbandonIfNoNavmesh, "Auto abandon if no navmesh", true);
@@ -1334,6 +1336,7 @@ I dont think this is a good idea to disable simulations completely:
 		CVar(DrawHitboxes, "Show hitboxes", false, NOSAVE);
 		CVar(AntiAimLines, "Antiaim lines", false);
 		CVar(CrashLogging, "Crash logging", true);
+
 #ifdef DEBUG_TRACES
 		CVar(VisualizeTraces, "Visualize traces", false, NOSAVE);
 		CVar(VisualizeTraceHits, "Visualize trace hits", false, NOSAVE);

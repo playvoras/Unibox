@@ -3,6 +3,23 @@
 #include "../CPController/CPController.h"
 #include "../../NavEngine.h"
 
+namespace
+{
+	Vector AdjustObjectivePosToNav(Vector vPos)
+	{
+		if (!F::NavEngine.IsNavMeshLoaded())
+			return vPos;
+
+		CNavArea* pArea = F::NavEngine.FindClosestNavArea(vPos, false);
+		if (!pArea)
+			return vPos;
+
+		Vector vCorrected = pArea->GetNearestPoint(vPos.Get2D());
+		vCorrected.z = pArea->GetZ(vCorrected.x, vCorrected.y);
+		return vCorrected;
+	}
+}
+
 CCaptureFlag* GetHaarpFlag(int iTeam, const Vector& vRelativePos = Vector())
 {
 	CCaptureFlag* pBestFlag = nullptr;
@@ -34,20 +51,6 @@ bool GetHaarpCapturePos(int iLocalTeam, Vector& vOut)
 	if (!pResource)
 		return false;
 
-	auto AdjustToNav = [](Vector vPos) -> Vector
-		{
-			if (!F::NavEngine.IsNavMeshLoaded())
-				return vPos;
-
-			CNavArea* pArea = F::NavEngine.FindClosestNavArea(vPos, false);
-			if (!pArea)
-				return vPos;
-
-			Vector vCorrected = pArea->GetNearestPoint(vPos.Get2D());
-			vCorrected.z = pArea->GetZ(vCorrected.x, vCorrected.y);
-			return vCorrected;
-		};
-
 	for (auto& tTrigger : G::TriggerStorage)
 	{
 		if (tTrigger.m_eType != TriggerTypeEnum::CaptureArea)
@@ -56,7 +59,7 @@ bool GetHaarpCapturePos(int iLocalTeam, Vector& vOut)
 		if (tTrigger.m_iTeam != 0 && tTrigger.m_iTeam != TF_TEAM_RED)
 			continue;
 
-		vOut = AdjustToNav(tTrigger.m_vCenter);
+		vOut = AdjustObjectivePosToNav(tTrigger.m_vCenter);
 
 		if (Vars::Debug::Info.Value)
 			G::SphereStorage.emplace_back(vOut, 40.f, 10, 10, I::GlobalVars->curtime + 2.2f, Color_t(255, 0, 255, 10), Color_t(255, 0, 255, 100));
@@ -77,7 +80,7 @@ bool GetHaarpCapturePos(int iLocalTeam, Vector& vOut)
 		if (iTeam != 0 && iTeam != iLocalTeam)
 			continue;
 
-		vOut = AdjustToNav(pEntity->GetAbsOrigin());
+		vOut = AdjustObjectivePosToNav(pEntity->GetAbsOrigin());
 
 		if (Vars::Debug::Info.Value)
 			G::SphereStorage.emplace_back(vOut, 40.f, 10, 10, I::GlobalVars->curtime + 2.2f, Color_t(255, 128, 0, 10), Color_t(255, 128, 0, 100));
@@ -113,7 +116,7 @@ bool GetHaarpCapturePos(int iLocalTeam, Vector& vOut)
 			continue;
 		}
 
-		vOut = AdjustToNav(vCPPos);
+		vOut = AdjustObjectivePosToNav(vCPPos);
 		if (Vars::Debug::Info.Value)
 			G::SphereStorage.emplace_back(vOut, 40.f, 10, 10, I::GlobalVars->curtime + 2.2f, Color_t(0, 255, 0, 10), Color_t(0, 255, 0, 100));
 
@@ -122,7 +125,7 @@ bool GetHaarpCapturePos(int iLocalTeam, Vector& vOut)
 
 	if (iFallbackIdx != -1)
 	{
-		vOut = AdjustToNav(pResource->m_vCPPositions(iFallbackIdx));
+		vOut = AdjustObjectivePosToNav(pResource->m_vCPPositions(iFallbackIdx));
 		return true;
 	}
 

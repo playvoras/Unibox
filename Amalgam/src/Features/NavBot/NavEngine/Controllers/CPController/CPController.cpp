@@ -1,5 +1,20 @@
 #include "CPController.h"
 
+namespace
+{
+	template <typename TContainer>
+	int FindIgnoredControlPointIndex(const std::string& sLevelName, const TContainer& aIgnorePoints)
+	{
+		for (const auto& tIgnore : aIgnorePoints)
+		{
+			if (sLevelName.find(tIgnore.m_sMapName) != std::string::npos)
+				return tIgnore.m_iPointIdx;
+		}
+
+		return -1;
+	}
+}
+
 void CCPController::UpdateObjectiveResource()
 {
 	// Get ObjectiveResource
@@ -168,15 +183,7 @@ bool CCPController::GetClosestControlPointInfo(Vector vPos, int iTeam, std::pair
 	if (!m_pObjectiveResource->m_iNumControlPoints())
 		return false;
 
-	int IgnoreIdx = -1;
-	// Do the points need checking because of the map?
-	auto sLevelName = SDK::GetLevelName();
-	for (auto tIgnore : m_aIgnorePoints)
-	{
-		// Try to find map name in bad point array
-		if (sLevelName.find(tIgnore.m_sMapName) != std::string::npos)
-			IgnoreIdx = tIgnore.m_iPointIdx;
-	}
+	const int IgnoreIdx = FindIgnoredControlPointIndex(SDK::GetLevelName(), m_aIgnorePoints);
 
 	// Find the best and closest control point
 	Vector BestControlPoint;

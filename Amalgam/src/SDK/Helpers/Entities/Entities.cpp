@@ -252,123 +252,133 @@ void CEntities::Store()
 				m_mModels[n] = FNV1A::Hash32(I::ModelInfoClient->GetModelName(pEntity->GetModel()));
 			}
 		}
-		else if (!ManageDormancy(n, pEntity))
+		else
 		{
 			switch (nClassID)
 			{
-			case ETFClassID::CTFPlayerResource:
-				m_pPlayerResource = pEntity->As<CTFPlayerResource>();
-				break;
 			case ETFClassID::CTFObjectiveResource:
 				m_pObjectiveResource = pEntity->As<CBaseTeamObjectiveResource>();
 				break;
-			case ETFClassID::CObjectSentrygun:
-			case ETFClassID::CObjectDispenser:
-			case ETFClassID::CObjectTeleporter:
-				m_mModels[n] = FNV1A::Hash32(I::ModelInfoClient->GetModelName(pEntity->GetModel()));
-				m_mGroups[EntityEnum::BuildingAll].push_back(pEntity);
-				m_mGroups[pEntity->m_iTeamNum() != iLocalTeam ? EntityEnum::BuildingEnemy : EntityEnum::BuildingTeam].push_back(pEntity);
-				break;
-			case ETFClassID::CBaseProjectile:
-			case ETFClassID::CBaseGrenade:
-			case ETFClassID::CTFWeaponBaseGrenadeProj:
-			case ETFClassID::CTFWeaponBaseMerasmusGrenade:
-			case ETFClassID::CTFGrenadePipebombProjectile:
-			case ETFClassID::CTFStunBall:
-			case ETFClassID::CTFBall_Ornament:
-			case ETFClassID::CTFProjectile_Jar:
-			case ETFClassID::CTFProjectile_Cleaver:
-			case ETFClassID::CTFProjectile_JarGas:
-			case ETFClassID::CTFProjectile_JarMilk:
-			case ETFClassID::CTFProjectile_SpellBats:
-			case ETFClassID::CTFProjectile_SpellKartBats:
-			case ETFClassID::CTFProjectile_SpellMeteorShower:
-			case ETFClassID::CTFProjectile_SpellMirv:
-			case ETFClassID::CTFProjectile_SpellPumpkin:
-			case ETFClassID::CTFProjectile_SpellSpawnBoss:
-			case ETFClassID::CTFProjectile_SpellSpawnHorde:
-			case ETFClassID::CTFProjectile_SpellSpawnZombie:
-			case ETFClassID::CTFProjectile_SpellTransposeTeleport:
-			case ETFClassID::CTFProjectile_Throwable:
-			case ETFClassID::CTFProjectile_ThrowableBreadMonster:
-			case ETFClassID::CTFProjectile_ThrowableBrick:
-			case ETFClassID::CTFProjectile_ThrowableRepel:
-			case ETFClassID::CTFBaseRocket:
-			case ETFClassID::CTFFlameRocket:
-			case ETFClassID::CTFProjectile_Arrow:
-			case ETFClassID::CTFProjectile_GrapplingHook:
-			case ETFClassID::CTFProjectile_HealingBolt:
-			case ETFClassID::CTFProjectile_Rocket:
-			case ETFClassID::CTFProjectile_BallOfFire:
-			case ETFClassID::CTFProjectile_MechanicalArmOrb:
-			case ETFClassID::CTFProjectile_SentryRocket:
-			case ETFClassID::CTFProjectile_SpellFireball:
-			case ETFClassID::CTFProjectile_SpellLightningOrb:
-			case ETFClassID::CTFProjectile_SpellKartOrb:
-			case ETFClassID::CTFProjectile_EnergyBall:
-			case ETFClassID::CTFProjectile_Flare:
-			case ETFClassID::CTFBaseProjectile:
-			case ETFClassID::CTFProjectile_EnergyRing:
-			{
-				if ((nClassID == ETFClassID::CTFProjectile_Cleaver || nClassID == ETFClassID::CTFStunBall) &&
-					pEntity->As<CTFGrenadePipebombProjectile>()->m_bTouched())
-					break;
-
-				if ((nClassID == ETFClassID::CTFProjectile_Arrow || nClassID == ETFClassID::CTFProjectile_GrapplingHook) &&
-					!pEntity->m_MoveType())
-					break;
-
-				m_mGroups[EntityEnum::WorldProjectile].push_back(pEntity);
-
-				if (nClassID == ETFClassID::CTFGrenadePipebombProjectile)
-				{
-					auto pPipebomb = pEntity->As<CTFGrenadePipebombProjectile>();
-					if (pPipebomb->m_hThrower().GetEntryIndex() == nLocalIndex && pPipebomb->m_iType() == TF_GL_MODE_REMOTE_DETONATE)
-						m_mGroups[EntityEnum::LocalStickies].push_back(pEntity);
-				}
-				else if (nClassID == ETFClassID::CTFProjectile_Flare && pEntity->m_hOwnerEntity().GetEntryIndex() == nLocalIndex)
-				{
-					auto pLauncher = pEntity->As<CTFProjectile_Flare>()->m_hLauncher()->As<CTFWeaponBase>();
-					if (pLauncher && pLauncher->As<CTFFlareGun>()->GetFlareGunType() == FLAREGUN_DETONATE)
-						m_mGroups[EntityEnum::LocalFlares].push_back(pEntity);
-				}
-				break;
-			}
 			case ETFClassID::CCaptureFlag:
 			case ETFClassID::CCaptureZone:
+			case ETFClassID::CPasstimeBall:
+			case ETFClassID::CTFPasstimeLogic:
+			case ETFClassID::CFuncPasstimeGoal:
 			case ETFClassID::CObjectCartDispenser:
 			case ETFClassID::CTeamControlPoint:
 			case ETFClassID::CFuncTrackTrain:
 				m_mGroups[EntityEnum::WorldObjective].push_back(pEntity);
 				break;
-			case ETFClassID::CTFBaseBoss:
-			case ETFClassID::CTFTankBoss:
-			case ETFClassID::CMerasmus:
-			case ETFClassID::CEyeballBoss:
-			case ETFClassID::CHeadlessHatman:
-			case ETFClassID::CZombie:
-				m_mGroups[EntityEnum::WorldNPC].push_back(pEntity);
-				break;
-			case ETFClassID::CTFGenericBomb:
-			case ETFClassID::CTFPumpkinBomb:
-				m_mGroups[EntityEnum::WorldBomb].push_back(pEntity);
-				break;
-			case ETFClassID::CBaseAnimating:
-				m_mModels[n] = FNV1A::Hash32(I::ModelInfoClient->GetModelName(pEntity->GetModel()));
-				break;
-			case ETFClassID::CTFAmmoPack:
-				m_mGroups[EntityEnum::PickupAmmo].push_back(pEntity);
-				break;
-			case ETFClassID::CSniperDot:
-				m_mGroups[EntityEnum::SniperDots].push_back(pEntity);
-				break;
 			}
-		}
-		else if (nClassID == ETFClassID::CObjectSentrygun ||
-			nClassID == ETFClassID::CObjectDispenser)
-		{
-			m_mGroups[EntityEnum::BuildingAll].push_back(pEntity);
-			m_mGroups[pEntity->m_iTeamNum() != iLocalTeam ? EntityEnum::BuildingEnemy : EntityEnum::BuildingTeam].push_back(pEntity);
+
+			if (!ManageDormancy(n, pEntity))
+			{
+				switch (nClassID)
+				{
+				case ETFClassID::CTFPlayerResource:
+					m_pPlayerResource = pEntity->As<CTFPlayerResource>();
+					break;
+				case ETFClassID::CObjectSentrygun:
+				case ETFClassID::CObjectDispenser:
+				case ETFClassID::CObjectTeleporter:
+					m_mModels[n] = FNV1A::Hash32(I::ModelInfoClient->GetModelName(pEntity->GetModel()));
+					m_mGroups[EntityEnum::BuildingAll].push_back(pEntity);
+					m_mGroups[pEntity->m_iTeamNum() != iLocalTeam ? EntityEnum::BuildingEnemy : EntityEnum::BuildingTeam].push_back(pEntity);
+					break;
+				case ETFClassID::CBaseProjectile:
+				case ETFClassID::CBaseGrenade:
+				case ETFClassID::CTFWeaponBaseGrenadeProj:
+				case ETFClassID::CTFWeaponBaseMerasmusGrenade:
+				case ETFClassID::CTFGrenadePipebombProjectile:
+				case ETFClassID::CTFStunBall:
+				case ETFClassID::CTFBall_Ornament:
+				case ETFClassID::CTFProjectile_Jar:
+				case ETFClassID::CTFProjectile_Cleaver:
+				case ETFClassID::CTFProjectile_JarGas:
+				case ETFClassID::CTFProjectile_JarMilk:
+				case ETFClassID::CTFProjectile_SpellBats:
+				case ETFClassID::CTFProjectile_SpellKartBats:
+				case ETFClassID::CTFProjectile_SpellMeteorShower:
+				case ETFClassID::CTFProjectile_SpellMirv:
+				case ETFClassID::CTFProjectile_SpellPumpkin:
+				case ETFClassID::CTFProjectile_SpellSpawnBoss:
+				case ETFClassID::CTFProjectile_SpellSpawnHorde:
+				case ETFClassID::CTFProjectile_SpellSpawnZombie:
+				case ETFClassID::CTFProjectile_SpellTransposeTeleport:
+				case ETFClassID::CTFProjectile_Throwable:
+				case ETFClassID::CTFProjectile_ThrowableBreadMonster:
+				case ETFClassID::CTFProjectile_ThrowableBrick:
+				case ETFClassID::CTFProjectile_ThrowableRepel:
+				case ETFClassID::CTFBaseRocket:
+				case ETFClassID::CTFFlameRocket:
+				case ETFClassID::CTFProjectile_Arrow:
+				case ETFClassID::CTFProjectile_GrapplingHook:
+				case ETFClassID::CTFProjectile_HealingBolt:
+				case ETFClassID::CTFProjectile_Rocket:
+				case ETFClassID::CTFProjectile_BallOfFire:
+				case ETFClassID::CTFProjectile_MechanicalArmOrb:
+				case ETFClassID::CTFProjectile_SentryRocket:
+				case ETFClassID::CTFProjectile_SpellFireball:
+				case ETFClassID::CTFProjectile_SpellLightningOrb:
+				case ETFClassID::CTFProjectile_SpellKartOrb:
+				case ETFClassID::CTFProjectile_EnergyBall:
+				case ETFClassID::CTFProjectile_Flare:
+				case ETFClassID::CTFBaseProjectile:
+				case ETFClassID::CTFProjectile_EnergyRing:
+				{
+					if ((nClassID == ETFClassID::CTFProjectile_Cleaver || nClassID == ETFClassID::CTFStunBall) &&
+						pEntity->As<CTFGrenadePipebombProjectile>()->m_bTouched())
+						break;
+
+					if ((nClassID == ETFClassID::CTFProjectile_Arrow || nClassID == ETFClassID::CTFProjectile_GrapplingHook) &&
+						!pEntity->m_MoveType())
+						break;
+
+					m_mGroups[EntityEnum::WorldProjectile].push_back(pEntity);
+
+					if (nClassID == ETFClassID::CTFGrenadePipebombProjectile)
+					{
+						auto pPipebomb = pEntity->As<CTFGrenadePipebombProjectile>();
+						if (pPipebomb->m_hThrower().GetEntryIndex() == nLocalIndex && pPipebomb->m_iType() == TF_GL_MODE_REMOTE_DETONATE)
+							m_mGroups[EntityEnum::LocalStickies].push_back(pEntity);
+					}
+					else if (nClassID == ETFClassID::CTFProjectile_Flare && pEntity->m_hOwnerEntity().GetEntryIndex() == nLocalIndex)
+					{
+						auto pLauncher = pEntity->As<CTFProjectile_Flare>()->m_hLauncher()->As<CTFWeaponBase>();
+						if (pLauncher && pLauncher->As<CTFFlareGun>()->GetFlareGunType() == FLAREGUN_DETONATE)
+							m_mGroups[EntityEnum::LocalFlares].push_back(pEntity);
+					}
+					break;
+				}
+				case ETFClassID::CTFBaseBoss:
+				case ETFClassID::CTFTankBoss:
+				case ETFClassID::CMerasmus:
+				case ETFClassID::CEyeballBoss:
+				case ETFClassID::CHeadlessHatman:
+				case ETFClassID::CZombie:
+					m_mGroups[EntityEnum::WorldNPC].push_back(pEntity);
+					break;
+				case ETFClassID::CTFGenericBomb:
+				case ETFClassID::CTFPumpkinBomb:
+					m_mGroups[EntityEnum::WorldBomb].push_back(pEntity);
+					break;
+				case ETFClassID::CBaseAnimating:
+					m_mModels[n] = FNV1A::Hash32(I::ModelInfoClient->GetModelName(pEntity->GetModel()));
+					break;
+				case ETFClassID::CTFAmmoPack:
+					m_mGroups[EntityEnum::PickupAmmo].push_back(pEntity);
+					break;
+				case ETFClassID::CSniperDot:
+					m_mGroups[EntityEnum::SniperDots].push_back(pEntity);
+					break;
+				}
+			}
+			else if (nClassID == ETFClassID::CObjectSentrygun ||
+				nClassID == ETFClassID::CObjectDispenser)
+			{
+				m_mGroups[EntityEnum::BuildingAll].push_back(pEntity);
+				m_mGroups[pEntity->m_iTeamNum() != iLocalTeam ? EntityEnum::BuildingEnemy : EntityEnum::BuildingTeam].push_back(pEntity);
+			}
 		}
 	}
 

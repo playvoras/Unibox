@@ -1,7 +1,39 @@
 #include "DangerManager.h"
 #include "../BotUtils.h"
 #include "../NavEngine/NavEngine.h"
+#include <algorithm>
 #include <cmath>
+
+namespace
+{
+	auto GetPlayerDangerRadius(int iClass) -> float
+	{
+		switch (iClass)
+		{
+		case TF_CLASS_SCOUT:
+		case TF_CLASS_HEAVY:
+		case TF_CLASS_ENGINEER:
+			return 350.f;
+		case TF_CLASS_SNIPER:
+			return 600.f;
+		default:
+			return 500.f;
+		}
+	}
+
+	void UpdateDangerEntry(std::unordered_map<CNavArea*, DangerData_t>& mDangerMap, CNavArea* pArea, float flScore, int iUpdateTick, const Vector& vOrigin, DangerType_t eType, BlacklistReasonEnum::BlacklistReasonEnum eReason)
+	{
+		DangerData_t& tData = mDangerMap[pArea];
+		if (flScore <= tData.m_flScore)
+			return;
+
+		tData.m_flScore = flScore;
+		tData.m_iLastUpdateTick = iUpdateTick;
+		tData.m_vOrigin = vOrigin;
+		tData.m_eType = eType;
+		tData.m_tLegacyReason = { eReason, 0 };
+	}
+}
 
 void CDangerManager::Update(CTFPlayer* pLocal)
 {
@@ -13,38 +45,12 @@ void CDangerManager::Update(CTFPlayer* pLocal)
 		return;
 
 	m_iLastUpdateTick = I::GlobalVars->tickcount;
-	
-	std::vector<CNavArea*> vToRemove;
-	for (auto& [pArea, data] : m_mDangerMap)
-	{
-		if (std::abs(m_iLastUpdateTick - data.m_iLastUpdateTick) > TIME_TO_TICKS(2.0f))
-			vToRemove.push_back(pArea);
-	}
-	for (auto pArea : vToRemove)
-		m_mDangerMap.erase(pArea);
+	std::erase_if(m_mDangerMap, [&](const auto& tEntry)
+		{
+			return std::abs(m_iLastUpdateTick - tEntry.second.m_iLastUpdateTick) > TIME_TO_TICKS(2.0f);
+		});
 
-
-	//change that, if we configure it correctly it will be so much better
-	switch (pLocal->m_iClass())
-	{
-	case TF_CLASS_SCOUT:
-	case TF_CLASS_HEAVY:
-		m_flMinSlightDanger = 350.f;
-		m_flMinFullDanger = 150.f;
-		break;
-	case TF_CLASS_ENGINEER:
-		m_flMinSlightDanger = 350.f;
-		m_flMinFullDanger = 150.f;
-		break;
-	case TF_CLASS_SNIPER:
-		m_flMinSlightDanger = 600.f;
-		m_flMinFullDanger = 300.f;
-		break;
-	default:
-		m_flMinSlightDanger = 500.f;
-		m_flMinFullDanger = 200.f;
-		break;
-	}
+	m_flMinSlightDanger = GetPlayerDangerRadius(pLocal->m_iClass());
 
 	UpdatePlayers(pLocal);
 	UpdateBuildings(pLocal);
@@ -143,16 +149,8 @@ void CDangerManager::UpdatePlayers(CTFPlayer* pLocal)
 			// Are you intentionally disabling vischeck for dormant players here?
 			if (!bDormant && !F::NavEngine.IsVectorVisibleNavigation(vOrigin + Vector(0,0,60), pArea->m_vCenter + Vector(0,0,40)))
 				continue;
-			
-			DangerData_t& tData = m_mDangerMap[pArea];
-			if (flFinalScore > tData.m_flScore)
-			{
-				tData.m_flScore = flFinalScore;
-				tData.m_iLastUpdateTick = m_iLastUpdateTick;
-				tData.m_vOrigin = vOrigin;
-				tData.m_eType = DangerType_t::Enemy;
-				tData.m_tLegacyReason = { eReason, 0 };
-			}
+
+			UpdateDangerEntry(m_mDangerMap, pArea, flFinalScore, m_iLastUpdateTick, vOrigin, DangerType_t::Enemy, eReason);
 		}
 	}
 }
@@ -204,15 +202,7 @@ void CDangerManager::UpdateBuildings(CTFPlayer* pLocal)
 			if (!F::NavEngine.IsVectorVisibleNavigation(vEyePos, pArea->m_vCenter + Vector(0, 0, 40), MASK_SHOT | CONTENTS_GRATE))
 				continue;
 
-			DangerData_t& tData = m_mDangerMap[pArea];
-			if (flScore > tData.m_flScore)
-			{
-				tData.m_flScore = flScore;
-				tData.m_iLastUpdateTick = m_iLastUpdateTick;
-				tData.m_vOrigin = vOrigin;
-				tData.m_eType = DangerType_t::Sentry;
-				tData.m_tLegacyReason = { BlacklistReasonEnum::Sentry, 0 };
-			}
+			UpdateDangerEntry(m_mDangerMap, pArea, flScore, m_iLastUpdateTick, vOrigin, DangerType_t::Sentry, BlacklistReasonEnum::Sentry);
 		}
 	}
 }
@@ -238,17 +228,7 @@ void CDangerManager::UpdateProjectiles(CTFPlayer* pLocal)
 		F::NavEngine.GetNavMap()->CollectAreasAround(pPipe->GetAbsOrigin(), flRadius, vAreas);
 
 		for (auto& pArea : vAreas)
-		{
-			DangerData_t& tData = m_mDangerMap[pArea];
-			if (flScore > tData.m_flScore)
-			{
-				tData.m_flScore = flScore;
-				tData.m_iLastUpdateTick = m_iLastUpdateTick;
-				tData.m_vOrigin = pPipe->GetAbsOrigin();
-				tData.m_eType = DangerType_t::Trap;
-				tData.m_tLegacyReason = { BlacklistReasonEnum::Sticky, 0 };
-			}
-		}
+			UpdateDangerEntry(m_mDangerMap, pArea, flScore, m_iLastUpdateTick, pPipe->GetAbsOrigin(), DangerType_t::Trap, BlacklistReasonEnum::Sticky);
 	}
 }
 

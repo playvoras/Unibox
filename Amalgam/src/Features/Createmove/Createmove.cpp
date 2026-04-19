@@ -293,6 +293,7 @@ void CCreateMove::Run(int nSequenceNum, float flInputSampleFrametime)
 	F::Misc.RunPre(pLocal, pCmd);
 	F::AutoJoin.Run(pLocal);
 	F::AutoItem.Run(pLocal);
+	SDK::RefreshTriggerStorage();
 	F::GameObjectiveController.Update();
 	F::BotUtils.Run(pLocal, pWeapon, pCmd);
 	F::AutoVote.Run(pLocal);
@@ -304,7 +305,7 @@ void CCreateMove::Run(int nSequenceNum, float flInputSampleFrametime)
 	}
 	F::Ticks.End(pLocal, pCmd);
 	{
-		F::FollowBot.Run(pLocal, pWeapon, pCmd);
+		F::FollowBot.Run(pLocal, pCmd);
 		F::NavBotCore.Run(pLocal, pWeapon, pCmd);
 		F::NavEngine.Run(pLocal, pWeapon, pCmd);
 		F::BotUtils.HandleSmartJump(pLocal, pCmd);

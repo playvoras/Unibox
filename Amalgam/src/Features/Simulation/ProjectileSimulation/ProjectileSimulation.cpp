@@ -4,6 +4,43 @@
 #include "../../CritHack/CritHack.h"
 #include "../../Backtrack/Backtrack.h"
 
+namespace
+{
+	const char* GetPasstimeThrowSpeedCvar(CTFPlayer* pPlayer)
+	{
+		switch (pPlayer ? pPlayer->m_iClass() : TF_CLASS_UNDEFINED)
+		{
+		case TF_CLASS_SCOUT: return "tf_passtime_throwspeed_scout";
+		case TF_CLASS_SOLDIER: return "tf_passtime_throwspeed_soldier";
+		case TF_CLASS_PYRO: return "tf_passtime_throwspeed_pyro";
+		case TF_CLASS_DEMOMAN: return "tf_passtime_throwspeed_demoman";
+		case TF_CLASS_HEAVY: return "tf_passtime_throwspeed_heavy";
+		case TF_CLASS_ENGINEER: return "tf_passtime_throwspeed_engineer";
+		case TF_CLASS_MEDIC: return "tf_passtime_throwspeed_medic";
+		case TF_CLASS_SNIPER: return "tf_passtime_throwspeed_sniper";
+		case TF_CLASS_SPY: return "tf_passtime_throwspeed_spy";
+		default: return "tf_passtime_throwspeed_scout";
+		}
+	}
+
+	const char* GetPasstimeThrowArcCvar(CTFPlayer* pPlayer)
+	{
+		switch (pPlayer ? pPlayer->m_iClass() : TF_CLASS_UNDEFINED)
+		{
+		case TF_CLASS_SCOUT: return "tf_passtime_throwarc_scout";
+		case TF_CLASS_SOLDIER: return "tf_passtime_throwarc_soldier";
+		case TF_CLASS_PYRO: return "tf_passtime_throwarc_pyro";
+		case TF_CLASS_DEMOMAN: return "tf_passtime_throwarc_demoman";
+		case TF_CLASS_HEAVY: return "tf_passtime_throwarc_heavy";
+		case TF_CLASS_ENGINEER: return "tf_passtime_throwarc_engineer";
+		case TF_CLASS_MEDIC: return "tf_passtime_throwarc_medic";
+		case TF_CLASS_SNIPER: return "tf_passtime_throwarc_sniper";
+		case TF_CLASS_SPY: return "tf_passtime_throwarc_spy";
+		default: return "tf_passtime_throwarc_scout";
+		}
+	}
+}
+
 bool CProjectileSimulation::GetInfoMain(CTFPlayer* pPlayer, CTFWeaponBase* pWeapon, Vec3 vAngles, ProjectileInfo& tProjInfo, int iFlags, float flAutoCharge)
 {
 	if (!pWeapon || !pPlayer->IsAlive() || pPlayer->IsAGhost() || pPlayer->IsTaunting())
@@ -283,6 +320,29 @@ bool CProjectileSimulation::GetInfoMain(CTFPlayer* pPlayer, CTFWeaponBase* pWeap
 		}
 		}
 		break;
+	}
+	case TF_WEAPON_PASSTIME_GUN:
+	{
+		static auto tf_passtime_throwspeed_velocity_scale = H::ConVars.FindVar("tf_passtime_throwspeed_velocity_scale");
+		const auto pszSpeed = GetPasstimeThrowSpeedCvar(pPlayer);
+		const auto pszArc = GetPasstimeThrowArcCvar(pPlayer);
+		auto pThrowSpeed = H::ConVars.FindVar(pszSpeed);
+		auto pThrowArc = H::ConVars.FindVar(pszArc);
+		if (!pThrowSpeed || !pThrowArc)
+			return false;
+
+		Vec3 vThrowAngles = vAngles;
+		vThrowAngles.x -= pThrowArc->GetFloat();
+		SDK::GetProjectileFireSetup(pPlayer, vThrowAngles, { 16.f, 8.f, -6.f }, vPos, vAngle, 0.f, 0.f, bInterp);
+
+		Vec3 vForward = {};
+		Math::AngleVectors(vAngle, &vForward);
+		float flSpeed = pThrowSpeed->GetFloat();
+		if (auto pScale = tf_passtime_throwspeed_velocity_scale)
+			flSpeed = std::max(0.f, flSpeed + pPlayer->m_vecVelocity().Dot(vForward) * pScale->GetFloat());
+
+		tProjInfo = { pPlayer, pWeapon, FNV1A::Hash32Const("models/passtime/ball/passtime_ball.mdl"), vPos, vAngle, { 3.f, 3.f, 3.f }, flSpeed, 1.f, 8.f };
+		return true;
 	}
 	}
 

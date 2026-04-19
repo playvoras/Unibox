@@ -35,7 +35,6 @@ private:
 	std::unordered_map<CNavArea*, DangerData_t> m_mDangerMap;
 	int m_iLastUpdateTick = 0;
 
-	float m_flMinFullDanger = 0.f;
 	float m_flMinSlightDanger = 0.f;
 
 	void UpdatePlayers(CTFPlayer* pLocal);

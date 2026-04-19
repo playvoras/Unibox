@@ -169,6 +169,7 @@
     <ClCompile Include="src\Hooks\IEngineVGui_Paint.cpp" />
     <ClCompile Include="src\Hooks\CInput_GetUserCmd.cpp" />
     <ClCompile Include="src\Hooks\IPanel_PaintTraverse.cpp" />
+    <ClCompile Include="src\Hooks\IsFreeTrialAccount.cpp" />
     <ClCompile Include="src\Hooks\ISteamFriends_GetFriendPersonaName.cpp" />
     <ClCompile Include="src\Hooks\ISteamNetworkingUtils_GetPingToDataCenter.cpp" />
     <ClCompile Include="src\Hooks\IVModelRender_DrawModelExecute.cpp" />
@@ -199,6 +200,7 @@
     <ClCompile Include="src\Features\NavBot\NavEngine\Controllers\FlagController\FlagController.cpp" />
     <ClCompile Include="src\Features\NavBot\NavEngine\Controllers\HaarpController\HaarpController.cpp" />
     <ClCompile Include="src\Features\NavBot\NavEngine\Controllers\DoomsdayController\DoomsdayController.cpp" />
+    <ClCompile Include="src\Features\NavBot\NavEngine\Controllers\PasstimeController\PasstimeController.cpp" />
     <ClCompile Include="src\Features\NavBot\NavEngine\Controllers\PLController\PLController.cpp" />
     <ClCompile Include="src\Features\NavBot\NavEngine\Controllers\Controller.cpp" />
     <ClCompile Include="src\Features\NavBot\NavEngine\MicroPather\micropather.cpp" />
@@ -208,6 +210,10 @@
     <ClCompile Include="src\Features\NavBot\BotUtils.cpp" />
     <ClCompile Include="src\Features\NavBot\DangerManager\DangerManager.cpp" />
     <ClCompile Include="src\Features\NavBot\NavBotCore.cpp" />
+    <ClCompile Include="src\Features\NavBot\NavAreaUtils.cpp" />
+    <ClCompile Include="src\Features\NavBot\NavBotConfig.cpp" />
+    <ClCompile Include="src\Features\NavBot\NavBotDebug.cpp" />
+    <ClCompile Include="src\Features\NavBot\NavRuntime.cpp" />
     <ClCompile Include="src\Features\NavBot\NavEngine\Map.cpp" />
     <ClCompile Include="src\Features\NavBot\NavBotJobs\GroupWithOthers.cpp" />
     <ClCompile Include="src\Features\NavBot\NavBotJobs\Roam.cpp" />
@@ -219,6 +225,8 @@
     <ClCompile Include="src\Features\NavBot\NavBotJobs\Engineer.cpp" />
     <ClCompile Include="src\Features\NavBot\NavBotJobs\SnipeSentry.cpp" />
     <ClCompile Include="src\Features\NavBot\NavBotJobs\EscapeDanger.cpp" />
+    <ClCompile Include="src\Features\NavBot\NavBotJobs\JobSystem.cpp" />
+    <ClCompile Include="src\Features\NavBot\NavBotJobs\NavJobUtils.cpp" />
     <ClCompile Include="src\Features\Players\SteamProfileCache.cpp" />
     <ClCompile Include="src\Features\Createmove\Createmove.cpp" />
     <ClCompile Include="src\Hooks\CGameEventManager_FireEventClientSide.cpp" />
@@ -628,6 +636,7 @@
     <ClInclude Include="src\Features\NavBot\NavEngine\Controllers\FlagController\FlagController.h" />
     <ClInclude Include="src\Features\NavBot\NavEngine\Controllers\HaarpController\HaarpController.h" />
     <ClInclude Include="src\Features\NavBot\NavEngine\Controllers\DoomsdayController\DoomsdayController.h" />
+    <ClInclude Include="src\Features\NavBot\NavEngine\Controllers\PasstimeController\PasstimeController.h" />
     <ClInclude Include="src\Features\NavBot\NavEngine\Controllers\PLController\PLController.h" />
     <ClInclude Include="src\Features\NavBot\NavEngine\Controllers\Controller.h" />
     <ClInclude Include="src\Features\NavBot\NavEngine\FileReader\CNavFile.h" />
@@ -639,6 +648,10 @@
     <ClInclude Include="src\Features\NavBot\BotUtils.h" />
     <ClInclude Include="src\Features\NavBot\DangerManager\DangerManager.h" />
     <ClInclude Include="src\Features\NavBot\NavBotCore.h" />
+    <ClInclude Include="src\Features\NavBot\NavAreaUtils.h" />
+    <ClInclude Include="src\Features\NavBot\NavBotConfig.h" />
+    <ClInclude Include="src\Features\NavBot\NavBotDebug.h" />
+    <ClInclude Include="src\Features\NavBot\NavRuntime.h" />
     <ClInclude Include="src\Features\NavBot\NavEngine\Map.h" />
     <ClInclude Include="src\Features\NavBot\NavBotJobs\EscapeDanger.h" />
     <ClInclude Include="src\Features\NavBot\NavBotJobs\Roam.h" />
@@ -650,6 +663,8 @@
     <ClInclude Include="src\Features\NavBot\NavBotJobs\Engineer.h" />
     <ClInclude Include="src\Features\NavBot\NavBotJobs\Melee.h" />
     <ClInclude Include="src\Features\NavBot\NavBotJobs\GroupWithOthers.h" />
+    <ClInclude Include="src\Features\NavBot\NavBotJobs\JobSystem.h" />
+    <ClInclude Include="src\Features\NavBot\NavBotJobs\NavJobUtils.h" />
     <ClInclude Include="src\Features\Players\SteamProfileCache.h" />
     <ClInclude Include="src\Features\Createmove\Createmove.h" />
     <ClInclude Include="src\SDK\Definitions\Interfaces\IFileSystem.h" />
@@ -665,6 +680,9 @@
     <ClInclude Include="src\SDK\Definitions\Interfaces\IMDLCache.h" />
     <ClInclude Include="src\SDK\Definitions\Main\CPredictionCopy.h" />
     <ClInclude Include="src\SDK\Definitions\Main\CBaseTeamObjectiveResource.h" />
+    <ClInclude Include="src\SDK\Definitions\Main\CFuncPasstimeGoal.h" />
+    <ClInclude Include="src\SDK\Definitions\Main\CPasstimeBall.h" />
+    <ClInclude Include="src\SDK\Definitions\Main\CTFPasstimeLogic.h" />
     <ClInclude Include="src\SDK\Definitions\Main\CServerBaseEntity.h" />
     <ClInclude Include="src\SDK\Definitions\Main\IServerEntity.h" />
     <ClInclude Include="src\SDK\Definitions\Main\IServerUnknown.h" />

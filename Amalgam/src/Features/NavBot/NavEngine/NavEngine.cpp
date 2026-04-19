@@ -7,52 +7,9 @@
 #include "../../Ticks/Ticks.h"
 #include "../../Misc/Misc.h"
 #include "../BotUtils.h"
+#include "../NavRuntime.h"
 #include "../../FollowBot/FollowBot.h"
 #include "../NavBotJobs/EscapeDanger.h"
-
-static bool IsMovementLocked(CTFPlayer* pLocal)
-{
-	if (!pLocal || !pLocal->IsAlive())
-		return true;
-
-	if (pLocal->m_fFlags() & FL_FROZEN)
-		return true;
-
-	if (pLocal->InCond(TF_COND_STUNNED) && (pLocal->m_iStunFlags() & (TF_STUN_CONTROLS | TF_STUN_LOSER_STATE)))
-		return true;
-
-	if (pLocal->IsTaunting() && !pLocal->m_bAllowMoveDuringTaunt())
-		return true;
-
-	if (auto pGameRules = I::TFGameRules())
-	{
-		if (pGameRules->m_bInWaitingForPlayers())
-			return true;
-
-		const int iRoundState = pGameRules->m_iRoundState();
-		if (iRoundState == GR_STATE_PREROUND || iRoundState == GR_STATE_BETWEEN_RNDS)
-			return true;
-	}
-
-	return false;
-}
-
-static bool IsMinigunJumpLocked(CTFWeaponBase* pWeapon, CUserCmd* pCmd)
-{
-	if (!pWeapon || pWeapon->GetWeaponID() != TF_WEAPON_MINIGUN)
-		return false;
-
-	const int iState = pWeapon->As<CTFMinigun>()->m_iWeaponState();
-	if (iState == AC_STATE_STARTFIRING || iState == AC_STATE_FIRING || iState == AC_STATE_SPINNING)
-		return true;
-
-	return pCmd && (pCmd->buttons & IN_ATTACK2);
-}
-
-static bool CanIssueNavJump(CTFWeaponBase* pWeapon, CUserCmd* pCmd)
-{
-	return !IsMinigunJumpLocked(pWeapon, pCmd);
-}
 
 static bool IsPayloadEscortPaceState(CTFPlayer* pLocal, const Vector& vLocalOrigin)
 {
@@ -107,6 +64,48 @@ static bool IsPayloadEscortPaceState(CTFPlayer* pLocal, const Vector& vLocalOrig
 	aLastPayloadPos[iPayloadIndex] = vPayloadPos;
 
 	return I::GlobalVars->curtime - aLastPayloadMoveTime[iPayloadIndex] <= flPayloadMoveGrace;
+}
+
+namespace
+{
+	Vector GetNearestPointOnArea(CNavArea* pArea, const Vector& vPos)
+	{
+		if (!pArea)
+			return vPos;
+
+		const float flX = std::clamp(vPos.x, pArea->m_vNwCorner.x, pArea->m_vSeCorner.x);
+		const float flY = std::clamp(vPos.y, pArea->m_vNwCorner.y, pArea->m_vSeCorner.y);
+		return { flX, flY, pArea->GetZ(flX, flY) };
+	}
+
+	float GetAreaVerticalOutside(CNavArea* pArea, const Vector& vPos)
+	{
+		if (!pArea)
+			return FLT_MAX;
+
+		const float flBelow = std::max(pArea->m_flMinZ - vPos.z, 0.0f);
+		const float flAbove = std::max(vPos.z - pArea->m_flMaxZ, 0.0f);
+		return flBelow + flAbove;
+	}
+
+	float GetAreaLocalScore(CNavArea* pArea, const Vector& vPos)
+	{
+		if (!pArea)
+			return FLT_MAX;
+
+		const Vector vNearestPoint = GetNearestPointOnArea(pArea, vPos);
+		Vector vPlanarDelta = vNearestPoint - vPos;
+		vPlanarDelta.z = 0.0f;
+
+		const float flSurfaceDelta = std::fabs(vNearestPoint.z - vPos.z);
+		const float flOutside = GetAreaVerticalOutside(pArea, vPos);
+		float flScore = vPlanarDelta.LengthSqr() + (flSurfaceDelta * flSurfaceDelta * 6.0f) + (flOutside * flOutside * 18.0f);
+		if (pArea->IsOverlapping(vPos))
+			flScore *= 0.45f;
+		if (pArea->IsOverlapping(vPos) && flOutside <= 18.0f)
+			flScore *= 0.15f;
+		return flScore;
+	}
 }
 
 bool CNavEngine::IsSetupTime()
@@ -1019,6 +1018,9 @@ bool CNavEngine::NavTo(const Vector& vDestination, PriorityListEnum::PriorityLis
 		{
 			const auto& tCrumb = m_vCrumbs[i];
 			const auto& tNextCrumb = m_vCrumbs[i + 1];
+			if (tCrumb.m_pNavArea && tCrumb.m_pNavArea == tNextCrumb.m_pNavArea)
+				continue;
+
 			const std::pair<CNavArea*, CNavArea*> tKey(tCrumb.m_pNavArea, tNextCrumb.m_pNavArea);
 
 			// Check if we have a valid cache entry
@@ -1104,12 +1106,28 @@ float CNavEngine::GetPathCost(const Vector& vStart, const Vector& vDestination, 
 
 CNavArea* CNavEngine::GetLocalNavArea(const Vector& pLocalOrigin)
 {
-	// Update local area only if our origin is no longer in its minmaxs
-	if (!m_pLocalArea ||
-		!m_pLocalArea->IsOverlapping(pLocalOrigin) ||
-		pLocalOrigin.z < (m_pLocalArea->m_flMinZ - 8.f) ||
-		pLocalOrigin.z > (m_pLocalArea->m_flMaxZ + PLAYER_CROUCHED_JUMP_HEIGHT))
-		m_pLocalArea = FindClosestNavArea(pLocalOrigin);
+	static Timer tLocalAreaRefresh{};
+
+	const bool bAreaInvalid = !m_pLocalArea || !m_pMap->IsAreaValid(m_pLocalArea);
+	const bool bOutsideXY = !bAreaInvalid && !m_pLocalArea->IsOverlapping(pLocalOrigin);
+	const float flVerticalOutside = !bAreaInvalid ? GetAreaVerticalOutside(m_pLocalArea, pLocalOrigin) : FLT_MAX;
+	const float flSurfaceDelta = !bAreaInvalid ? std::fabs(GetNearestPointOnArea(m_pLocalArea, pLocalOrigin).z - pLocalOrigin.z) : FLT_MAX;
+	const bool bNeedsRefresh = bAreaInvalid || bOutsideXY || flVerticalOutside > 24.0f || flSurfaceDelta > PLAYER_HEIGHT;
+
+	if (bNeedsRefresh || tLocalAreaRefresh.Run(0.10f))
+	{
+		CNavArea* pBestArea = FindClosestNavArea(pLocalOrigin, true);
+		if (!m_pLocalArea || !pBestArea)
+			m_pLocalArea = pBestArea;
+		else
+		{
+			const float flCurrentScore = GetAreaLocalScore(m_pLocalArea, pLocalOrigin);
+			const float flBestScore = GetAreaLocalScore(pBestArea, pLocalOrigin);
+			if (bNeedsRefresh || (pBestArea != m_pLocalArea && flBestScore + 4.0f < flCurrentScore))
+				m_pLocalArea = pBestArea;
+		}
+	}
+
 	return m_pLocalArea;
 }
 
@@ -1209,6 +1227,9 @@ void CNavEngine::VischeckPath()
 	{
 		auto tCrumb = m_vCrumbs[i];
 		auto tNextCrumb = m_vCrumbs[i + 1];
+		if (tCrumb.m_pNavArea && tCrumb.m_pNavArea == tNextCrumb.m_pNavArea)
+			continue;
+
 		auto tKey = std::pair<CNavArea*, CNavArea*>(tCrumb.m_pNavArea, tNextCrumb.m_pNavArea);
 
 		auto vCurrentCenter = tCrumb.m_vPos;
@@ -1386,7 +1407,7 @@ void CNavEngine::CheckBlacklist(CTFPlayer* pLocal)
 
 void CNavEngine::UpdateStuckTime(CTFPlayer* pLocal, CUserCmd* pCmd)
 {
-	if (IsMovementLocked(pLocal))
+	if (NavRuntime::IsMovementLocked(pLocal))
 	{
 		m_tInactivityTimer.Update();
 		return;
@@ -1579,6 +1600,28 @@ bool CNavEngine::IsBlacklistIrrelevant()
 	return bIrrelevant;
 }
 
+void CNavEngine::ClearPathState()
+{
+	m_vCrumbs.clear();
+	m_tLastCrumb.m_pNavArea = nullptr;
+	m_vCurrentPathDir = {};
+	m_iStuckJumpAttempts = 0;
+	m_iRecentFallSpeedIndex = 0;
+	m_nRecentFallSpeedCount = 0;
+	m_vLastLookTarget = {};
+	m_vStuckCheckPos = {};
+	m_flStuckCheckDistToCrumb = FLT_MAX;
+	m_iNoProgressSamples = 0;
+	m_tStuckSampleTimer.Update();
+}
+
+void CNavEngine::ClearDebugPaths()
+{
+	m_vPossiblePaths.clear();
+	m_vRejectedPaths.clear();
+	m_vDebugWalkablePaths.clear();
+}
+
 void CNavEngine::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 {
 	static bool bWasOn = false;
@@ -1599,7 +1642,7 @@ void CNavEngine::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 		return;
 	}
 
-	if (IsMovementLocked(pLocal))
+	if (NavRuntime::IsMovementLocked(pLocal))
 	{
 		CancelPath();
 		m_tInactivityTimer.Update();
@@ -1636,7 +1679,8 @@ void CNavEngine::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 
 	const Vector vLocalOrigin = pLocal->GetAbsOrigin();
 	CNavArea* pArea = GetLocalNavArea(vLocalOrigin);
-	bool bOnNavMesh = pArea && pArea->IsOverlapping(vLocalOrigin) && std::fabs(pArea->GetZ(vLocalOrigin.x, vLocalOrigin.y) - vLocalOrigin.z) < 18.f;
+	bool bOnNavMesh = pArea && pArea->IsOverlapping(vLocalOrigin) && GetAreaVerticalOutside(pArea, vLocalOrigin) <= 18.0f
+		&& std::fabs(GetNearestPointOnArea(pArea, vLocalOrigin).z - vLocalOrigin.z) < 18.0f;
 
 	if (bOnNavMesh || IsPathing())
 	{
@@ -1644,18 +1688,54 @@ void CNavEngine::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 	}
 	else if (pArea)
 	{
-		Vector vTarget = pArea->GetNearestPoint(Vector2D(vLocalOrigin.x, vLocalOrigin.y));
-		m_vOffMeshTarget = vTarget;
+		std::vector<CNavArea*> vCandidates;
+		m_pMap->CollectAreasAround(vLocalOrigin, 325.0f, vCandidates);
+		if (std::find(vCandidates.begin(), vCandidates.end(), pArea) == vCandidates.end())
+			vCandidates.push_back(pArea);
 
-		CGameTrace trace;
+		CNavArea* pRecoveryArea = nullptr;
+		Vector vRecoveryTarget = {};
+		float flBestRecoveryScore = FLT_MAX;
 		CTraceFilterNavigation filter(pLocal);
-		SDK::Trace(vLocalOrigin, vTarget, MASK_PLAYERSOLID, &filter, &trace);
 
-		if (trace.fraction > 0.01f)
+		for (auto* pCandidate : vCandidates)
 		{
+			if (!pCandidate)
+				continue;
+
+			Vector vCandidateTarget = GetNearestPointOnArea(pCandidate, vLocalOrigin);
+			const float flOutside = GetAreaVerticalOutside(pCandidate, vLocalOrigin);
+			const float flSurfaceDelta = std::fabs(vCandidateTarget.z - vLocalOrigin.z);
+			Vector vPlanar = vCandidateTarget - vLocalOrigin;
+			vPlanar.z = 0.0f;
+			if (flOutside > PLAYER_CROUCHED_JUMP_HEIGHT && flSurfaceDelta > PLAYER_HEIGHT + 24.0f)
+				continue;
+
+			CGameTrace trace;
+			SDK::Trace(vLocalOrigin, vCandidateTarget, MASK_PLAYERSOLID, &filter, &trace);
+
+			Vector vResolvedTarget = trace.fraction >= 1.0f ? vCandidateTarget : trace.endpos;
+			if (trace.fraction <= 0.05f || vResolvedTarget.DistToSqr(vLocalOrigin) < 16.0f * 16.0f)
+				continue;
+
+			float flScore = vPlanar.LengthSqr() + (flSurfaceDelta * flSurfaceDelta * 8.0f) + (flOutside * flOutside * 12.0f);
+			if (pCandidate == pArea)
+				flScore *= 0.9f;
+
+			if (flScore < flBestRecoveryScore)
+			{
+				flBestRecoveryScore = flScore;
+				pRecoveryArea = pCandidate;
+				vRecoveryTarget = vResolvedTarget;
+			}
+		}
+
+		if (pRecoveryArea)
+		{
+			m_vOffMeshTarget = vRecoveryTarget;
 			m_vCrumbs.clear();
-			BuildIntraAreaCrumbs(vLocalOrigin, trace.endpos, pArea);
-			m_vCrumbs.push_back({ pArea, trace.endpos });
+			BuildIntraAreaCrumbs(vLocalOrigin, vRecoveryTarget, pRecoveryArea);
+			m_vCrumbs.push_back({ pRecoveryArea, vRecoveryTarget });
 			m_eCurrentPriority = PriorityListEnum::Patrol;
 			m_tOffMeshTimer.Update();
 		}
@@ -1664,11 +1744,11 @@ void CNavEngine::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 	if (Vars::Misc::Movement::NavEngine::VischeckEnabled.Value && !F::Ticks.m_bWarp && !F::Ticks.m_bDoubletap)
 		VischeckPath();
 
+	ClearDebugPaths();
+
 	if (Vars::Misc::Movement::NavEngine::Draw.Value & Vars::Misc::Movement::NavEngine::DrawEnum::PossiblePaths)
 	{
 		std::lock_guard lock(m_pMap->m_mutex);
-		m_vPossiblePaths.clear();
-		m_vRejectedPaths.clear();
 		if (pArea)
 		{
 			// Collect nearby exit areas
@@ -1716,19 +1796,6 @@ void CNavEngine::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 			}
 		}
 	}
-	else
-	{
-		m_vPossiblePaths.clear();
-		m_vRejectedPaths.clear();
-	}
-
-	if (Vars::Misc::Movement::NavEngine::Draw.Value & Vars::Misc::Movement::NavEngine::DrawEnum::Walkable)
-	{
-		m_vDebugWalkablePaths.clear();
-	}
-	else
-		m_vDebugWalkablePaths.clear();
-
 	// CheckPathValidity(pLocal);
 	FollowCrumbs(pLocal, pWeapon, pCmd);
 	UpdateStuckTime(pLocal, pCmd);
@@ -1742,8 +1809,7 @@ void CNavEngine::AbandonPath(const std::string& sReason)
 
 	m_sLastFailureReason = sReason;
 	// m_pMap->m_pather.Reset();
-	m_vCrumbs.clear();
-	m_tLastCrumb.m_pNavArea = nullptr;
+	ClearPathState();
 	// We want to repath on failure
 	if (m_bRepathOnFail)
 	{
@@ -1805,20 +1871,10 @@ void CNavEngine::UpdateRespawnRooms()
 
 void CNavEngine::CancelPath()
 {
-	m_vCrumbs.clear();
-	m_tLastCrumb.m_pNavArea = nullptr;
-	m_vCurrentPathDir = {};
-	m_iStuckJumpAttempts = 0;
-	m_iRecentFallSpeedIndex = 0;
-	m_nRecentFallSpeedCount = 0;
+	ClearPathState();
 	m_eCurrentPriority = PriorityListEnum::None;
 	m_bIgnoreTraces = false;
 	m_iNextRepathTick = 0;
-	m_vLastLookTarget = {};
-	m_vStuckCheckPos = {};
-	m_flStuckCheckDistToCrumb = FLT_MAX;
-	m_iNoProgressSamples = 0;
-	m_tStuckSampleTimer.Update();
 }
 
 bool CanJumpIfScoped(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
@@ -1848,7 +1904,7 @@ void CNavEngine::FollowCrumbs(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCm
 		static Timer tLastJump{};
 		if (!bPayloadEscortPace &&
 			pLocal->OnSolid() &&
-			CanIssueNavJump(pWeapon, pCmd) &&
+			NavRuntime::CanIssueNavJump(pWeapon, pCmd) &&
 			m_tInactivityTimer.Check(1.0f) &&
 			tLastJump.Check(0.6f))
 		{
@@ -1902,10 +1958,7 @@ void CNavEngine::FollowCrumbs(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCm
 	// No more crumbs, reset status
 	if (!uCrumbsSize)
 	{
-		// Invalidate last crumb
-		m_tLastCrumb.m_pNavArea = nullptr;
-		m_iStuckJumpAttempts = 0;
-
+		ClearPathState();
 		m_bRepathOnFail = false;
 		m_eCurrentPriority = PriorityListEnum::None;
 		DoLook(Vec3{}, false);
@@ -2210,7 +2263,7 @@ void CNavEngine::FollowCrumbs(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCm
 			// Phase 2 (~2.0-4.0s): jump with moderate direction adjustment
 			else if (m_iNoProgressSamples < 10)
 			{
-				if (bCanJump && CanIssueNavJump(pWeapon, pCmd) && pLocal->OnSolid() && tLastJump.Check(0.5f))
+				if (bCanJump && NavRuntime::CanIssueNavJump(pWeapon, pCmd) && pLocal->OnSolid() && tLastJump.Check(0.5f))
 				{
 					F::BotUtils.ForceJump();
 					m_iStuckJumpAttempts++;

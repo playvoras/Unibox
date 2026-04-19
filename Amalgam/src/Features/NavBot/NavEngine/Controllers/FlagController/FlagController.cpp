@@ -1,5 +1,16 @@
 #include "FlagController.h"
 
+namespace
+{
+	auto BuildFlagInfo(CCaptureFlag* pFlag) -> FlagInfo
+	{
+		FlagInfo tFlag{};
+		tFlag.m_pFlag = pFlag;
+		tFlag.m_iTeam = pFlag ? pFlag->m_iTeamNum() : 0;
+		return tFlag;
+	}
+}
+
 FlagInfo CFlagController::GetFlag(int iTeam)
 {
 	for (auto tFlag : m_vFlags)
@@ -101,13 +112,7 @@ void CFlagController::Update()
 			continue;
 
 		auto pFlag = pEntity->As<CCaptureFlag>();
-		// Cannot use dormant flag, but it is still potentially valid
-		if (pFlag->IsDormant())
-			continue;
-
-		FlagInfo tFlag{};
-		tFlag.m_pFlag = pFlag;
-		tFlag.m_iTeam = pFlag->m_iTeamNum();
+		FlagInfo tFlag = BuildFlagInfo(pFlag);
 
 		if (pFlag->m_nFlagStatus() == TF_FLAGINFO_HOME)
 			m_mSpawnPositions[pFlag->entindex()] = pFlag->GetAbsOrigin();
