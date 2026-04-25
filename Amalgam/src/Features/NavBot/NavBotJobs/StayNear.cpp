@@ -291,7 +291,7 @@ bool CNavBotStayNear::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 			if (iStayNearTargetIdx != -1 && !tTargetSwitchTimer.Check(1.0f) && vCandidates.front().first != iStayNearTargetIdx)
 				return F::NavEngine.m_eCurrentPriority == PriorityListEnum::StayNear;
 
-			for (auto [iIdx, _] : vCandidates)
+			for (auto iIdx : vCandidates | std::views::keys)
 			{
 				if (!StayNearTarget(pLocal, pWeapon, iIdx))
 					continue;

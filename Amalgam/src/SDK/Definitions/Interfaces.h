@@ -4,9 +4,13 @@
 
 #include "Interfaces/CClientModeShared.h"
 #include "Interfaces/CClientState.h"
+#include "Interfaces/CCollisionBSPData.h"
+#include "Interfaces/CDispCollTree.h"
 #include "Interfaces/CGlobalVarsBase.h"
 #include "Interfaces/CHLClient.h"
 #include "Interfaces/CHLTVCamera.h"
+#include "Interfaces/CMDLCache.h"
+#include "Interfaces/CStaticPropMgr.h"
 #include "Interfaces/CTFGameRules.h"
 #include "Interfaces/CTFGCClientSystem.h"
 #include "Interfaces/CThirdPersonManager.h"
@@ -26,6 +30,7 @@
 #include "Interfaces/IMemAlloc.h"
 #include "Interfaces/IMoveHelper.h"
 #include "Interfaces/IPanel.h"
+#include "Interfaces/ISpatialPartition.h"
 #include "Interfaces/IStudioRender.h"
 #include "Interfaces/IUniformRandomStream.h"
 #include "Interfaces/IVEngineClient.h"
@@ -42,7 +47,7 @@
 #include "Interfaces/CModelLoader.h"
 #include "Interfaces/IDemoPlayer.h"
 #include "Interfaces/IDemoRecorder.h"
-#include "Interfaces/IMDLCache.h"
+#include "Interfaces/WorldBrushData.h"
 
 #ifndef TEXTMODE
 #include <d3d9.h>

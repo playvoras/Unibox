@@ -296,7 +296,7 @@ bool CNavBotCapture::GetControlPointGoal(const Vector vLocalOrigin, int iOurTeam
 			{
 				int slotIndex = (iPreferredSlot + offset) % iSlots;
 				float t = static_cast<float>(slotIndex) / static_cast<float>(iSlots);
-				float flAngle = t * PI * 2.0f;
+				float flAngle = t * Math::PI * 2.0f;
 
 				Vector vCandidate = vPosition;
 				if (flBaseRadius > 1.0f)
@@ -323,7 +323,7 @@ bool CNavBotCapture::GetControlPointGoal(const Vector vLocalOrigin, int iOurTeam
 					int iMaxSegments = std::max(6, iSlots + iRing * 2);
 					for (int iSeg = 0; iSeg < iMaxSegments; ++iSeg)
 					{
-						float flAngle = (static_cast<float>(iSeg) / iMaxSegments) * PI * 2.0f;
+						float flAngle = (static_cast<float>(iSeg) / iMaxSegments) * Math::PI * 2.0f;
 						Vector vCandidate = vPosition;
 						if (flRingRadius > 1.0f)
 						{

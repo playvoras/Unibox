@@ -250,6 +250,7 @@ bool CAutoDetonate::SkipTarget(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CBaseE
 			break;
 		}
 	}
+
 	return true;
 }
 
@@ -517,6 +518,9 @@ bool CAutoDetonate::StickyCheck(CTFPlayer* pLocal, CUserCmd* pCmd)
 						{
 							if (pCmd && pWeapon && pWeapon->m_iItemDefinitionIndex() == Demoman_s_TheScottishResistance)
 							{
+								if (G::Attacking == 1 || I::ClientState->chokedcommands)
+									return false;
+								
 								Vec3 vAngleTo = Math::CalcAngle(pLocal->GetShootPos(), pSticky->m_vecOrigin());
 								SDK::FixMovement(pCmd, vAngleTo);
 								pCmd->viewangles = vAngleTo;

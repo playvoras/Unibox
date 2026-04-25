@@ -161,7 +161,7 @@ template <> void CConfigs::LoadJson(const boost::property_tree::ptree& t, const 
 	if (auto tChild = t.get_child_optional(s))
 	{
 		v.clear();
-		for (auto& [_, tLayer] : *tChild)
+		for (auto& tLayer : *tChild | std::views::values)
 		{
 			if (auto o = tLayer.get_optional<std::string>("Material"))
 			{
@@ -182,7 +182,7 @@ template <> void CConfigs::LoadJson(const boost::property_tree::ptree& t, const 
 		bool bValid = uHash != FNV1A::Hash32Const("None") && (uHash == FNV1A::Hash32Const("Original") || F::Materials.m_mMaterials.contains(uHash));
 		if (bValid)
 		{
-			int i = 0; for (auto& [s, _] : v)
+			int i = 0; for (auto& s : v | std::views::keys)
 			{
 				auto uHash2 = FNV1A::Hash32(s.c_str());
 				if (uHash == uHash2)
@@ -417,7 +417,7 @@ static inline void LoadMain(BaseVar*& pBase, boost::property_tree::ptree& tTree)
 	pVar->Map = { { DEFAULT_BIND, pVar->Default } };
 	if (auto tMap = tTree.get_child_optional(pVar->Name()))
 	{
-		for (auto& [sKey, _] : *tMap)
+		for (auto& sKey : *tMap | std::views::keys)
 		{
 			int iBind = std::stoi(sKey);
 			if (iBind == DEFAULT_BIND || F::Binds.m_vBinds.size() > iBind && !(pVar->m_iFlags & NOBIND))
@@ -542,8 +542,7 @@ bool CConfigs::LoadConfig(const std::string& sConfigName, bool bNotify)
 			if (sConfigName == std::string("default"))
 			{
 				SaveConfig("default", false);
-
-				H::Fonts.Reload(Vars::Menu::Scale[DEFAULT_BIND]);
+				H::Fonts.Reload();
 			}
 			return false;
 		}
@@ -556,7 +555,7 @@ bool CConfigs::LoadConfig(const std::string& sConfigName, bool bNotify)
 
 		if (auto tSub = tRead.get_child_optional("Binds"))
 		{
-			for (const auto& [_, tChild] : *tSub)
+			for (const auto& tChild : *tSub | std::views::values)
 			{
 				Bind_t tBind = {};
 				LoadJson(tChild, "Name", tBind.m_sName);
@@ -607,7 +606,7 @@ bool CConfigs::LoadConfig(const std::string& sConfigName, bool bNotify)
 
 		if (auto tSub = tRead.get_child_optional("Groups"))
 		{
-			for (auto& [_, tChild] : *tSub)
+			for (auto& tChild : *tSub | std::views::values)
 			{
 				Group_t tGroup = {};
 				LoadJson(tChild, "Name", tGroup.m_sName);
@@ -638,7 +637,7 @@ bool CConfigs::LoadConfig(const std::string& sConfigName, bool bNotify)
 			SDK::Output("Amalgam", "Config groups not found", ALTERNATE_COLOR, OUTPUT_CONSOLE | OUTPUT_MENU | OUTPUT_DEBUG);
 
 		F::Binds.SetVars(nullptr, nullptr, false);
-		H::Fonts.Reload(Vars::Menu::Scale[DEFAULT_BIND]);
+		H::Fonts.Reload();
 
 		m_sCurrentConfig = sConfigName; m_sCurrentVisuals = "";
 		if (bNotify)
@@ -811,7 +810,7 @@ bool CConfigs::LoadVisual(const std::string& sConfigName, bool bNotify)
 
 		if (auto tSub = tRead.get_child_optional("Groups"))
 		{
-			for (auto& [_, tChild] : *tSub)
+			for (auto& tChild : *tSub | std::views::values)
 			{
 				Group_t tGroup = {};
 				LoadJson(tChild, "Name", tGroup.m_sName);
@@ -915,7 +914,7 @@ void CConfigs::ResetConfig(const std::string& sConfigName, bool bNotify)
 
 		SaveConfig(sConfigName, false);
 		F::Binds.SetVars(nullptr, nullptr, false);
-		H::Fonts.Reload(Vars::Menu::Scale[DEFAULT_BIND]);
+		H::Fonts.Reload();
 
 		if (bNotify)
 			SDK::Output("Amalgam", std::format("Config {} reset", sConfigName).c_str(), DEFAULT_COLOR, OUTPUT_CONSOLE | OUTPUT_TOAST | OUTPUT_MENU | OUTPUT_DEBUG);

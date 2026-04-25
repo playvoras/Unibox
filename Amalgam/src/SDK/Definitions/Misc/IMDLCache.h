@@ -1,5 +1,5 @@
 #pragma once
-#include "../Misc/IAppSystem.h"
+#include "IAppSystem.h"
 
 struct studiohdr_t;
 struct studiohwdata_t;
@@ -7,7 +7,6 @@ struct vcollide_t;
 struct virtualmodel_t;
 struct vertexFileHeader_t;
 struct FileHeader_t;
-
 typedef unsigned short MDLHandle_t;
 
 enum
@@ -26,13 +25,6 @@ enum MDLCacheDataType_t
 	MDLCACHE_DECODEDANIMBLOCK
 };
 
-class IMDLCacheNotify
-{
-public:
-	virtual void OnDataLoaded(MDLCacheDataType_t type, MDLHandle_t handle) = 0;
-	virtual void OnDataUnloaded(MDLCacheDataType_t type, MDLHandle_t handle) = 0;
-};
-
 enum MDLCacheFlush_t
 {
 	MDLCACHE_FLUSH_STUDIOHDR = 0x01,
@@ -44,6 +36,13 @@ enum MDLCacheFlush_t
 	MDLCACHE_FLUSH_VERTEXES = 0x40,
 	MDLCACHE_FLUSH_IGNORELOCK = 0x80000000,
 	MDLCACHE_FLUSH_ALL = 0xFFFFFFFF
+};
+
+class IMDLCacheNotify
+{
+public:
+	virtual void OnDataLoaded(MDLCacheDataType_t type, MDLHandle_t handle) = 0;
+	virtual void OnDataUnloaded(MDLCacheDataType_t type, MDLHandle_t handle) = 0;
 };
 
 class IMDLCache : public IAppSystem
@@ -107,5 +106,3 @@ public:
 private:
 	IMDLCache* m_pCache;
 };
-
-MAKE_INTERFACE_VERSION(IMDLCache, MDLCache, "datacache.dll", "MDLCache004");

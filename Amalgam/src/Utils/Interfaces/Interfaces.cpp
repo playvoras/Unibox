@@ -9,7 +9,7 @@
 
 #pragma warning (disable: 4172)
 
-InterfaceInit_t::InterfaceInit_t(void** pPtr, const char* sDLL, const char* sName, int8_t nType, int8_t nOffset, int8_t nDereferenceCount)
+InterfaceInit_t::InterfaceInit_t(void** pPtr, const char* sDLL, const char* sName, int8_t nType, int8_t nOffset, int8_t nDereferenceCount, bool bNullCheck)
 {
 	m_pPtr = pPtr;
 	m_sDLL = sDLL;
@@ -17,6 +17,7 @@ InterfaceInit_t::InterfaceInit_t(void** pPtr, const char* sDLL, const char* sNam
 	m_nType = nType;
 	m_nOffset = nOffset;
 	m_nDereferenceCount = nDereferenceCount;
+	m_bNullCheck = bNullCheck;
 
 	U::Interfaces.AddInterface(this);
 }
@@ -84,15 +85,14 @@ bool CInterfaces::Initialize()
 				*Interface->m_pPtr = *reinterpret_cast<void**>(*Interface->m_pPtr);
 		}
 
-		if (!*Interface->m_pPtr)
+		if (Interface->m_bNullCheck && !*Interface->m_pPtr)
 		{
 			U::Core.AppendFailText(std::format("CInterfaces::Initialize() failed to initialize:\n  {}\n  {}", sModule, Interface->m_sName).c_str());
 			m_bFailed = true;
 		}
 	}
 
-	if (!H::Interfaces.Initialize())
-		m_bFailed = true; // Initialize any null interfaces
+	m_bFailed = !H::Interfaces.Initialize() || m_bFailed; // initialize any null interfaces
 
 	return !m_bFailed;
 }

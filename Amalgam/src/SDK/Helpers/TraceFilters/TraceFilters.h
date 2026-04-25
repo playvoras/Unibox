@@ -1,5 +1,8 @@
 #pragma once
 #include "../../Definitions/Interfaces/IEngineTrace.h"
+#include "../../Definitions/Definitions.h"
+
+class CBaseEntity;
 
 enum
 {
@@ -35,7 +38,7 @@ public:
 		m_pSkip = const_cast<CBaseEntity*>(reinterpret_cast<const CBaseEntity*>(pPassEntity));
 	}
 
-	bool ShouldHitEntity(IHandleEntity* pServerEntity, int nContentsMask) override;
+	bool ShouldHitEntity(IHandleEntity* pHandleEntity, int nContentsMask) override;
 	TraceType_t GetTraceType() const override;
 
 	CBaseEntity* m_pSkip = nullptr;
@@ -62,7 +65,7 @@ public:
 		m_pSkip = const_cast<CBaseEntity*>(reinterpret_cast<const CBaseEntity*>(pPassEntity));
 	}
 
-	bool ShouldHitEntity(IHandleEntity* pServerEntity, int nContentsMask) override;
+	bool ShouldHitEntity(IHandleEntity* pHandleEntity, int nContentsMask) override;
 	TraceType_t GetTraceType() const override;
 
 	CBaseEntity* m_pSkip = nullptr;
@@ -89,7 +92,7 @@ public:
 		m_pSkip = const_cast<CBaseEntity*>(reinterpret_cast<const CBaseEntity*>(pPassEntity));
 	}
 
-	bool ShouldHitEntity(IHandleEntity* pServerEntity, int nContentsMask) override;
+	bool ShouldHitEntity(IHandleEntity* pHandleEntity, int nContentsMask) override;
 	TraceType_t GetTraceType() const override;
 
 	CBaseEntity* m_pSkip = nullptr;
@@ -106,7 +109,7 @@ public:
 		m_pSkip = const_cast<CBaseEntity*>(reinterpret_cast<const CBaseEntity*>(pPassEntity));
 	}
 
-	bool ShouldHitEntity(IHandleEntity* pServerEntity, int nContentsMask) override;
+	bool ShouldHitEntity(IHandleEntity* pHandleEntity, int nContentsMask) override;
 	TraceType_t GetTraceType() const override;
 
 	CBaseEntity* m_pSkip = nullptr;

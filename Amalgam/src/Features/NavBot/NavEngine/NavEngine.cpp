@@ -1289,7 +1289,7 @@ void CNavEngine::CheckBlacklist(CTFPlayer* pLocal)
 	}
 
 	std::lock_guard lock(m_pMap->m_mutex);
-	for (auto& [pArea, _] : m_pMap->m_mFreeBlacklist)
+	for (auto& pArea : m_pMap->m_mFreeBlacklist | std::views::keys)
 	{
 		// Local player is in a blocked area, so temporarily remove the blacklist as else we would be stuck
 		if (pArea == m_pLocalArea)

@@ -3,11 +3,15 @@
 #include "../Main/INetChannel.h"
 #include "../Misc/ClientClass.h"
 #include "../Misc/ServerClass.h"
+#include "../Misc/CUtlVector.h"
+#include "../Misc/CUtlString.h"
 #include "../Definitions.h"
 
 MAKE_SIGNATURE(CBaseClientState_SendStringCmd, "engine.dll", "48 81 EC ? ? ? ? 48 8B 49", 0x0);
 MAKE_SIGNATURE(CBaseClientState_ForceFullUpdate, "engine.dll", "40 53 48 83 EC ? 83 B9 ? ? ? ? ? 48 8B D9 74 ? E8", 0x0);
 MAKE_SIGNATURE(CClientState_IsPaused, "engine.dll", "48 83 EC ? 80 B9 ? ? ? ? ? 75", 0x0);
+
+#define	MAX_OSPATH 260 // max length of a filesystem pathname
 
 class IChangeFrameList;
 

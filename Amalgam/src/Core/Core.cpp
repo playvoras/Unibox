@@ -7,6 +7,7 @@
 #include "../Features/EnginePrediction/EnginePrediction.h"
 #include "../Features/Visuals/Materials/Materials.h"
 #include "../Features/Visuals/Visuals.h"
+#include "../Features/Spectate/Spectate.h"
 #include "../SDK/Events/Events.h"
 #ifdef TEXTMODE
 #include "../Features/Misc/NamedPipe/NamedPipe.h"
@@ -157,7 +158,7 @@ void CCore::Load()
 #endif
 	H::ConVars.Modify(Vars::Misc::Exploits::UnlockCVars.Value);
 #ifndef TEXTMODE
-	H::Fonts.Reload(Vars::Menu::Scale[DEFAULT_BIND]);
+	H::Fonts.Reload();
 #endif
 	F::Configs.LoadConfig(F::Configs.m_sCurrentConfig, false);
 	I::EngineClient->ClientCmd_Unrestricted("exec catexec");
@@ -172,7 +173,7 @@ void CCore::Loop()
 		if (m_bUnload)
 			break;
 #else
-		bool bShouldUnload = U::KeyHandler.Down(VK_F11) && SDK::IsGameWindowInFocus() || m_bUnload;
+		bool bShouldUnload = U::KeyHandler.Down(VK_F11, true) && SDK::IsGameWindowInFocus() || m_bUnload;
 		if (bShouldUnload)
 			break;
 #endif 
@@ -198,17 +199,22 @@ void CCore::Unload()
 
 	if (F::Menu.m_bIsOpen)
 		I::MatSystemSurface->SetCursorAlwaysVisible(false);
-	if (I::Input->CAM_IsThirdPerson())
+	H::ConVars.FindVar("cl_wpn_sway_interp")->SetValue(0.f);
+	H::ConVars.FindVar("cl_wpn_sway_scale")->SetValue(0.f);
+	F::Visuals.RestoreWorldModulation();
+	if (auto pLocal = H::Entities.GetLocal())
 	{
-		if (auto pLocal = H::Entities.GetLocal())
+		if (F::Spectate.HasTarget())
+		{
+			F::Spectate.NetUpdateStart(pLocal);
+			I::EngineClient->SetViewAngles(F::Spectate.m_vOldView);
+		}
+		if (I::Input->CAM_IsThirdPerson())
 		{
 			I::Input->CAM_ToFirstPerson();
 			pLocal->ThirdPersonSwitch();
 		}
 	}
-	F::Visuals.RestoreWorldModulation();
-	H::ConVars.FindVar("cl_wpn_sway_interp")->SetValue(0.f);
-	H::ConVars.FindVar("cl_wpn_sway_scale")->SetValue(0.f);
 
 	Sleep(250);
 #ifdef DEBUG_UNI

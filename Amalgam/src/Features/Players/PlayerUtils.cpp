@@ -206,9 +206,9 @@ int CPlayerlistUtils::GetPriority(uint32_t uAccountID, bool bCache)
 		return m_vTags[TagToIndex(IGNORED_TAG)].m_iPriority;
 
 	std::vector<int> vPriorities;
-	if (m_mPlayerTags.contains(uAccountID))
+	if (auto it = m_mPlayerTags.find(uAccountID); it != m_mPlayerTags.end())
 	{
-		for (auto& iID : m_mPlayerTags[uAccountID])
+		for (auto& iID : it->second)
 		{
 			auto pTag = GetTag(iID);
 			if (pTag && !pTag->m_bLabel)
@@ -257,9 +257,9 @@ int CPlayerlistUtils::GetFollowPriority(uint32_t uAccountID, bool bCache)
 		return iDefault;
 
 	std::vector<int> vPriorities;
-	if (m_mPlayerTags.contains(uAccountID))
+	if (auto it = m_mPlayerTags.find(uAccountID); it != m_mPlayerTags.end())
 	{
-		for (auto& iID : m_mPlayerTags[uAccountID])
+		for (auto& iID : it->second)
 		{
 			auto pTag = GetTag(iID);
 			if (pTag && !pTag->m_bLabel)
@@ -314,9 +314,9 @@ int CPlayerlistUtils::GetVotePriority(uint32_t uAccountID, bool bCache)
 		return iDefault;
 
 	std::vector<int> vPriorities;
-	if (m_mPlayerTags.contains(uAccountID))
+	if (auto it = m_mPlayerTags.find(uAccountID); it != m_mPlayerTags.end())
 	{
-		for (auto& iID : m_mPlayerTags[uAccountID])
+		for (auto& iID : it->second)
 		{
 			auto pTag = GetTag(iID);
 			if (pTag && !pTag->m_bLabel)
@@ -372,9 +372,9 @@ PriorityLabel_t* CPlayerlistUtils::GetSignificantTag(uint32_t uAccountID, int iM
 		if (HasTag(uAccountID, TagToIndex(IGNORED_TAG)))
 			return &m_vTags[TagToIndex(IGNORED_TAG)];
 
-		if (m_mPlayerTags.contains(uAccountID))
+		if (auto it = m_mPlayerTags.find(uAccountID); it != m_mPlayerTags.end())
 		{
-			for (auto& iID : m_mPlayerTags[uAccountID])
+			for (auto& iID : it->second)
 			{
 				PriorityLabel_t* _pTag = GetTag(iID);
 				if (_pTag && !_pTag->m_bLabel)
@@ -402,9 +402,9 @@ PriorityLabel_t* CPlayerlistUtils::GetSignificantTag(uint32_t uAccountID, int iM
 	}
 	if ((!iMode || iMode == 2) && !vTags.size())
 	{
-		if (m_mPlayerTags.contains(uAccountID))
+		if (auto it = m_mPlayerTags.find(uAccountID); it != m_mPlayerTags.end())
 		{
-			for (auto& iID : m_mPlayerTags[uAccountID])
+			for (auto& iID : it->second)
 			{
 				PriorityLabel_t* _pTag = GetTag(iID);
 				if (_pTag && _pTag->m_bLabel)
@@ -434,13 +434,13 @@ PriorityLabel_t* CPlayerlistUtils::GetSignificantTag(uint32_t uAccountID, int iM
 		return nullptr;
 
 	std::sort(vTags.begin(), vTags.end(), [&](const PriorityLabel_t* a, const PriorityLabel_t* b) -> bool
-		{
-			// sort by priority if unequal
-			if (a->m_iPriority != b->m_iPriority)
-				return a->m_iPriority > b->m_iPriority;
+	{
+		// sort by priority if unequal
+		if (a->m_iPriority != b->m_iPriority)
+			return a->m_iPriority > b->m_iPriority;
 
-			return a->m_sName < b->m_sName;
-		});
+		return a->m_sName < b->m_sName;
+	});
 	return vTags.front();
 }
 PriorityLabel_t* CPlayerlistUtils::GetSignificantTag(int iIndex, int iMode)

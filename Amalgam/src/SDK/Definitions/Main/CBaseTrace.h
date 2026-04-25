@@ -1,5 +1,5 @@
 #pragma once
-#include "../Definitions.h"
+#include "CModel.h"
 
 #define DISPSURF_FLAG_SURFACE (1<<0)
 #define DISPSURF_FLAG_WALKABLE (1<<1)

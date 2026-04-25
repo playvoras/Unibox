@@ -71,7 +71,7 @@ void CResolver::FrameStageNotify()
 		if (fabsf(pPlayer->m_angEyeAnglesX()) == 90.f)
 		{
 			if (auto flPitch = GetPitchForSniperDot(pPlayer, pResource))
-				tData.m_flPitch = flPitch.value();
+				tData.m_flPitch = *flPitch;
 			else if (!tData.m_bFirstOOBPitch && tData.m_bAutoSetPitch || tData.m_bInversePitch)
 				tData.m_flPitch = -pPlayer->m_angEyeAnglesX(); // set to inverse by default
 			else
@@ -126,38 +126,38 @@ void CResolver::CreateMove()
 	if (!pResource)
 		return;
 
-	auto getPlayerClosestToFOV = [&]()
+	auto fGetPlayerClosestToFOV = [&]()
+	{
+		CTFPlayer* pClosest = nullptr;
+		float flMinFOV = 180.f;
+
+		const Vec3 vLocalPos = F::Ticks.GetShootPos();
+		const Vec3 vLocalAngles = I::EngineClient->GetViewAngles();
+
+		for (auto& pEntity : H::Entities.GetGroup(EntityEnum::PlayerAll))
 		{
-			CTFPlayer* pClosest = nullptr;
-			float flMinFOV = 180.f;
+			if (pEntity->entindex() == I::EngineClient->GetLocalPlayer() || pEntity->IsDormant())
+				continue;
 
-			const Vec3 vLocalPos = F::Ticks.GetShootPos();
-			const Vec3 vLocalAngles = I::EngineClient->GetViewAngles();
+			Vec3 vCurPos = pEntity->GetCenter();
+			Vec3 vCurAngleTo = Math::CalcAngle(vLocalPos, vCurPos);
+			float flCurFOVTo = Math::CalcFov(vLocalAngles, vCurAngleTo);
 
-			for (auto& pEntity : H::Entities.GetGroup(EntityEnum::PlayerAll))
+			if (flCurFOVTo < flMinFOV)
 			{
-				if (pEntity->entindex() == I::EngineClient->GetLocalPlayer() || pEntity->IsDormant())
-					continue;
-
-				Vec3 vCurPos = pEntity->GetCenter();
-				Vec3 vCurAngleTo = Math::CalcAngle(vLocalPos, vCurPos);
-				float flCurFOVTo = Math::CalcFov(vLocalAngles, vCurAngleTo);
-
-				if (flCurFOVTo < flMinFOV)
-				{
-					pClosest = pEntity->As<CTFPlayer>();
-					flMinFOV = flCurFOVTo;
-				}
+				pClosest = pEntity->As<CTFPlayer>();
+				flMinFOV = flCurFOVTo;
 			}
+		}
 
-			return pClosest;
-		};
+		return pClosest;
+	};
 
 	if (Vars::Resolver::CycleYaw.Value)
 	{
 		if (SDK::PlatFloatTime() > m_flLastYawCycle + 0.5f)
 		{
-			if (auto pTarget = getPlayerClosestToFOV())
+			if (auto pTarget = fGetPlayerClosestToFOV())
 			{
 				int iUserID = pResource->m_iUserID(pTarget->entindex());
 				auto& tData = m_mResolverData[iUserID];
@@ -179,7 +179,7 @@ void CResolver::CreateMove()
 	{
 		if (SDK::PlatFloatTime() > m_flLastPitchCycle + 0.5f)
 		{
-			if (auto pTarget = getPlayerClosestToFOV())
+			if (auto pTarget = fGetPlayerClosestToFOV())
 			{
 				int iUserID = pResource->m_iUserID(pTarget->entindex());
 				auto& tData = m_mResolverData[iUserID];
@@ -209,7 +209,7 @@ void CResolver::CreateMove()
 	{
 		if (SDK::PlatFloatTime() > m_flLastMinwalkCycle + 0.5f)
 		{
-			if (auto pTarget = getPlayerClosestToFOV())
+			if (auto pTarget = fGetPlayerClosestToFOV())
 			{
 				int iUserID = pResource->m_iUserID(pTarget->entindex());
 				auto& tData = m_mResolverData[iUserID];
@@ -231,7 +231,7 @@ void CResolver::CreateMove()
 	{
 		if (SDK::PlatFloatTime() > m_flLastViewCycle + 0.5f)
 		{
-			if (auto pTarget = getPlayerClosestToFOV())
+			if (auto pTarget = fGetPlayerClosestToFOV())
 			{
 				int iUserID = pResource->m_iUserID(pTarget->entindex());
 				auto& tData = m_mResolverData[iUserID];

@@ -20,7 +20,6 @@ public:
 
 	EWeaponType m_eRanType = EWeaponType::UNKNOWN;
 	bool m_bRunningSecondary = false;
-	float m_flFOV = 0.f;
 
 	DrawPath_t m_tPath = {};
 };

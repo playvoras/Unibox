@@ -55,8 +55,12 @@ bool CNavBotEngineer::BlacklistedFromBuilding(CNavArea* pArea)
 	{
 		for (auto [pBlacklistedArea, tReason] : *pBlackList)
 		{
-			if (pBlacklistedArea == pArea && tReason.m_eValue == BlacklistReasonEnum::BadBuildSpot)
-				return true;
+			if (pBlacklistedArea == pArea)
+			{
+				if (tReason.m_eValue == BlacklistReasonEnum::BadBuildSpot)
+					return true;
+				break;
+			}
 		}
 	}
 	return false;
@@ -282,7 +286,7 @@ bool CNavBotEngineer::GetFocusPoint(CTFPlayer* pLocal, ClosestEnemy_t& tClosestE
 		CNavArea* pNewFocusArea = nullptr;
 		Vector vFocus;
 		int iTeammatesOnFocusPoint = 0;
-		for (auto [pTeammate, _] : vTeammatesSorted)
+		for (auto pTeammate : vTeammatesSorted | std::views::keys)
 		{
 			Vector vNewFocus = vFocus + pTeammate->GetAbsOrigin();
 

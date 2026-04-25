@@ -185,23 +185,23 @@ std::vector<TickRecord*> CBacktrack::GetValidRecords(std::vector<TickRecord*>& v
 	{
 		if (bDistance)
 			std::sort(vReturn.begin(), vReturn.end(), [&](const TickRecord* a, const TickRecord* b) -> bool
-				{
-					if (Vars::Backtrack::PreferOnShot.Value && a->m_bOnShot != b->m_bOnShot)
-						return a->m_bOnShot > b->m_bOnShot;
+			{
+				if (Vars::Backtrack::PreferOnShot.Value && a->m_bOnShot != b->m_bOnShot)
+					return a->m_bOnShot > b->m_bOnShot;
 
-					return pLocal->m_vecOrigin().DistTo(a->m_vOrigin) < pLocal->m_vecOrigin().DistTo(b->m_vOrigin);
-				});
+				return pLocal->m_vecOrigin().DistToSqr(a->m_vOrigin) < pLocal->m_vecOrigin().DistToSqr(b->m_vOrigin);
+			});
 		else
 		{
 			std::sort(vReturn.begin(), vReturn.end(), [&](const TickRecord* a, const TickRecord* b) -> bool
-				{
-					if (Vars::Backtrack::PreferOnShot.Value && a->m_bOnShot != b->m_bOnShot)
-						return a->m_bOnShot > b->m_bOnShot;
+			{
+				if (Vars::Backtrack::PreferOnShot.Value && a->m_bOnShot != b->m_bOnShot)
+					return a->m_bOnShot > b->m_bOnShot;
 
-					const float flADelta = flCorrect - (TICKS_TO_TIME(iServerTick - (a->m_flSimTime + flTimeMod)));
-					const float flBDelta = flCorrect - (TICKS_TO_TIME(iServerTick - (b->m_flSimTime + flTimeMod)));
-					return fabsf(flADelta) < fabsf(flBDelta);
-				});
+				const float flADelta = flCorrect - (TICKS_TO_TIME(iServerTick - (a->m_flSimTime + flTimeMod)));
+				const float flBDelta = flCorrect - (TICKS_TO_TIME(iServerTick - (b->m_flSimTime + flTimeMod)));
+				return fabsf(flADelta) < fabsf(flBDelta);
+			});
 		}
 	}
 
@@ -224,7 +224,7 @@ std::vector<HitboxInfo_t>* CBacktrack::GetHitboxInfos(CBaseEntity* pEntity)
 	return nullptr;
 }
 
-
+static matrix3x4 s_aBones[MAXSTUDIOBONES];
 
 void CBacktrack::MakeRecords()
 {
@@ -236,10 +236,8 @@ void CBacktrack::MakeRecords()
 			!H::Entities.GetDeltaTime(pPlayer->entindex()))
 			continue;
 
-
-		matrix3x4 aBones[MAXSTUDIOBONES];
 		m_bSettingUpBones = true;
-		bool bSetup = pPlayer->SetupBones(aBones, MAXSTUDIOBONES, BONE_USED_BY_ANYTHING, pPlayer->m_flSimulationTime());
+		bool bSetup = pPlayer->SetupBones(s_aBones, MAXSTUDIOBONES, BONE_USED_BY_ANYTHING, pPlayer->m_flSimulationTime());
 		m_bSettingUpBones = false;
 		if (!bSetup)
 			continue;
@@ -261,7 +259,7 @@ void CBacktrack::MakeRecords()
 			const Vec3 vMin = pBox->bbmin, vMax = pBox->bbmax;
 			const int iBone = pBox->bone;
 			Vec3 vCenter{};
-			Math::VectorTransform((vMin + vMax) / 2, aBones[iBone], vCenter);
+			Math::VectorTransform((vMin + vMax) / 2, s_aBones[iBone], vCenter);
 			vHitboxInfos.push_back({ iBone, nHitbox, vCenter, vMin, vMax });
 		}
 
@@ -274,7 +272,7 @@ void CBacktrack::MakeRecords()
 			vHitboxInfos,
 			m_mDidShoot[pPlayer->entindex()]
 		};
-		memcpy(tCurRecord.m_aBones, aBones, sizeof(tCurRecord.m_aBones));
+		memcpy(tCurRecord.m_aBones, s_aBones, sizeof(tCurRecord.m_aBones));
 		TickRecord* pLastRecord = !vRecords.empty() ? &vRecords.front() : nullptr;
 		vRecords.emplace_front(tCurRecord);
 
@@ -388,41 +386,41 @@ void CBacktrack::AdjustPing(CNetChannel* pNetChan)
 {
 	m_nOldInSequenceNr = pNetChan->m_nInSequenceNr, m_nOldInReliableState = pNetChan->m_nInReliableState;
 
-	auto Set = [&]()
+	auto fSet = [&]()
+	{
+		if (!Vars::Backtrack::Latency.Value)
+			return 0.f;
+
+		auto pLocal = H::Entities.GetLocal();
+		if (!pLocal || !pLocal->m_iClass())
+			return 0.f;
+
+		static auto host_timescale = H::ConVars.FindVar("host_timescale");
+		float flTimescale = host_timescale->GetFloat();
+
+		static float flStaticReal = 0.f;
+		float flFake = GetWishFake(), flReal = TICKS_TO_TIME(pLocal->m_nTickBase() - m_nOldTickBase);
+		flStaticReal += (flReal + 5 * TICK_INTERVAL - flStaticReal) * 0.1f;
+
+		int nInReliableState = pNetChan->m_nInReliableState, nInSequenceNr = pNetChan->m_nInSequenceNr; float flLatency = 0.f;
+		for (auto& cSequence : m_dSequences)
 		{
-			if (!Vars::Backtrack::Latency.Value)
-				return 0.f;
+			nInReliableState = cSequence.m_nInReliableState;
+			nInSequenceNr = cSequence.m_nSequenceNr;
+			flLatency = (I::GlobalVars->realtime - cSequence.m_flTime) * flTimescale - TICK_INTERVAL;
 
-			auto pLocal = H::Entities.GetLocal();
-			if (!pLocal || !pLocal->m_iClass())
-				return 0.f;
+			if (flLatency > flFake || m_nLastInSequenceNr >= cSequence.m_nSequenceNr || flLatency > m_flMaxUnlag - flStaticReal)
+				break;
+		}
+		if (flLatency > 1.f) // hacky failsafe
+			return 0.f;
 
-			static auto host_timescale = H::ConVars.FindVar("host_timescale");
-			float flTimescale = host_timescale->GetFloat();
+		pNetChan->m_nInReliableState = nInReliableState;
+		pNetChan->m_nInSequenceNr = nInSequenceNr;
+		return flLatency;
+	};
 
-			static float flStaticReal = 0.f;
-			float flFake = GetWishFake(), flReal = TICKS_TO_TIME(pLocal->m_nTickBase() - m_nOldTickBase);
-			flStaticReal += (flReal + 5 * TICK_INTERVAL - flStaticReal) * 0.1f;
-
-			int nInReliableState = pNetChan->m_nInReliableState, nInSequenceNr = pNetChan->m_nInSequenceNr; float flLatency = 0.f;
-			for (auto& cSequence : m_dSequences)
-			{
-				nInReliableState = cSequence.m_nInReliableState;
-				nInSequenceNr = cSequence.m_nSequenceNr;
-				flLatency = (I::GlobalVars->realtime - cSequence.m_flTime) * flTimescale - TICK_INTERVAL;
-
-				if (flLatency > flFake || m_nLastInSequenceNr >= cSequence.m_nSequenceNr || flLatency > m_flMaxUnlag - flStaticReal)
-					break;
-			}
-			if (flLatency > 1.f) // hacky failsafe
-				return 0.f;
-
-			pNetChan->m_nInReliableState = nInReliableState;
-			pNetChan->m_nInSequenceNr = nInSequenceNr;
-			return flLatency;
-		};
-
-	auto flLatency = Set();
+	auto flLatency = fSet();
 	m_nLastInSequenceNr = pNetChan->m_nInSequenceNr;
 
 	if (Vars::Backtrack::Latency.Value || m_flFakeLatency)

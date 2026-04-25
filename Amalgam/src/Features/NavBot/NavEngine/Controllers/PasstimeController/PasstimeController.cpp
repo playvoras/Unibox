@@ -715,7 +715,7 @@ Vector CPasstimeController::GetThrowTargetPos(const PasstimeGoalInfo& tGoal, con
 	{
 		for (int i = 0; i < 12; i++)
 		{
-			const float flYaw = DEG2RAD(30.0f * i);
+			const float flYaw = Math::Deg2Rad(30.0f * i);
 			Vector vDir = { cosf(flYaw), sinf(flYaw), 0.0f };
 			Vector vCandidate = vGoalCenter + vDir * (flGoalRadius + flStandOff);
 			vCandidate.z = tGoal.m_vOrigin.z;

@@ -365,7 +365,7 @@ bool CBotUtils::GetDormantOrigin(int iIndex, Vector* pOut)
 	auto pEntity = I::ClientEntityList->GetClientEntity(iIndex)->As<CBaseEntity>();
 	if (!pEntity ||
 		(pEntity->IsPlayer() ? !pEntity->As<CBasePlayer>()->IsAlive() :
-		pEntity->IsBuilding() ? !pEntity->As<CBaseObject>()->m_iHealth() : true))
+		(!pEntity->IsBuilding() || !pEntity->As<CBaseObject>()->m_iHealth())))
 		return false;
 
 	if (!pEntity->IsDormant() || H::Entities.GetDormancy(iIndex))
@@ -1283,7 +1283,7 @@ void CBotUtils::Reset()
 bool CBotUtils::IsSurfaceWalkable(const Vector& vNormal)
 {
 	static const Vector vUp = { 0.f, 0.f, 1.f };
-	float flAngle = RAD2DEG(std::acos(vNormal.Dot(vUp)));
+	float flAngle = Math::Rad2Deg(std::acos(vNormal.Dot(vUp)));
 	return flAngle < 50.f; // MAX_WALKABLE_ANGLE
 }
 

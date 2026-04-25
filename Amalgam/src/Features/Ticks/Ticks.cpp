@@ -549,45 +549,45 @@ void CTicks::Draw(CTFPlayer* pLocal)
 	const DragBox_t dtPos = Vars::Menu::TicksDisplay.Value;
 	const auto& fFont = H::Fonts.GetFont(FONT_INDICATORS);
 
-	if (!m_bSpeedhack)
+	if (m_bSpeedhack)
 	{
-		int iAntiAimTicks = F::AntiAim.YawOn() ? F::AntiAim.AntiAimTicks() : 0;
-		int iTicks = std::clamp(m_iShiftedTicks + std::max(I::ClientState->chokedcommands - iAntiAimTicks, 0), 0, m_iMaxUsrCmdProcessTicks);
-		int iMax = std::max(m_iMaxUsrCmdProcessTicks - iAntiAimTicks, 0);
-
-		int boxWidth = 180;
-		int boxHeight = 29;
-		int barHeight = 3;
-		int textBoxHeight = boxHeight - barHeight;
-
-		int x = dtPos.x - boxWidth / 2;
-		int y = dtPos.y;
-
-		Color_t bgColor = { 0, 0, 0, 180 };
-		H::Draw.GradientRect(x, y, boxWidth, textBoxHeight, bgColor, bgColor, true);
-		H::Draw.GradientRect(x, y + textBoxHeight, boxWidth, barHeight, bgColor, bgColor, true);
-
-		static float currentProgress = 0.0f;
-		float targetProgress = float(iTicks) / iMax;
-		currentProgress = std::lerp(currentProgress, targetProgress, I::GlobalVars->frametime * 10.0f);
-
-		int barWidth = static_cast<int>(boxWidth * currentProgress);
-		if (barWidth > 0)
-		{
-			Color_t barColor = m_iWait ? Color_t{ 255, 150, 0, 255 } : Color_t{ 0, 255, 100, 255 };
-			H::Draw.GradientRect(x, y + textBoxHeight, barWidth, barHeight, barColor, barColor, true);
-		}
-
-		std::string leftText = "Ticks";
-		std::string rightText = std::format("{} / {}", iTicks, iMax);
-		Color_t textColor = Vars::Menu::Theme::Active.Value;
-
-		H::Draw.String(fFont, x + 5, y + (textBoxHeight / 2), textColor, ALIGN_LEFT, leftText.c_str());
-		H::Draw.String(fFont, x + boxWidth - 5, y + (textBoxHeight / 2), textColor, ALIGN_RIGHT, rightText.c_str());
-
-		if (m_iWait)
-			H::Draw.StringOutlined(fFont, dtPos.x, y + boxHeight + 2, textColor, Vars::Menu::Theme::Background.Value, ALIGN_TOP, "Not Ready");
-	}
-	else
 		H::Draw.StringOutlined(fFont, dtPos.x, dtPos.y + 2, Vars::Menu::Theme::Active.Value, Vars::Menu::Theme::Background.Value, ALIGN_TOP, std::format("Speedhack x{}", Vars::Speedhack::Amount.Value).c_str());
+		return;
+	}
+	int iAntiAimTicks = F::AntiAim.YawOn() ? F::AntiAim.AntiAimTicks() : 0;
+	int iTicks = std::clamp(m_iShiftedTicks + std::max(I::ClientState->chokedcommands - iAntiAimTicks, 0), 0, m_iMaxUsrCmdProcessTicks);
+	int iMax = std::max(m_iMaxUsrCmdProcessTicks - iAntiAimTicks, 0);
+
+	int boxWidth = 180;
+	int boxHeight = 29;
+	int barHeight = 3;
+	int textBoxHeight = boxHeight - barHeight;
+
+	int x = dtPos.x - boxWidth / 2;
+	int y = dtPos.y;
+
+	Color_t bgColor = { 0, 0, 0, 180 };
+	H::Draw.GradientRect(x, y, boxWidth, textBoxHeight, bgColor, bgColor, true);
+	H::Draw.GradientRect(x, y + textBoxHeight, boxWidth, barHeight, bgColor, bgColor, true);
+
+	static float currentProgress = 0.0f;
+	float targetProgress = float(iTicks) / iMax;
+	currentProgress = std::lerp(currentProgress, targetProgress, I::GlobalVars->frametime * 10.0f);
+
+	int barWidth = static_cast<int>(boxWidth * currentProgress);
+	if (barWidth > 0)
+	{
+		Color_t barColor = m_iWait ? Color_t{ 255, 150, 0, 255 } : Color_t{ 0, 255, 100, 255 };
+		H::Draw.GradientRect(x, y + textBoxHeight, barWidth, barHeight, barColor, barColor, true);
+	}
+
+	std::string leftText = "Ticks";
+	std::string rightText = std::format("{} / {}", iTicks, iMax);
+	Color_t textColor = Vars::Menu::Theme::Active.Value;
+
+	H::Draw.String(fFont, x + 5, y + (textBoxHeight / 2), textColor, ALIGN_LEFT, leftText.c_str());
+	H::Draw.String(fFont, x + boxWidth - 5, y + (textBoxHeight / 2), textColor, ALIGN_RIGHT, rightText.c_str());
+
+	if (m_iWait)
+		H::Draw.StringOutlined(fFont, dtPos.x, y + boxHeight + 2, textColor, Vars::Menu::Theme::Background.Value, ALIGN_TOP, "Not Ready");
 }

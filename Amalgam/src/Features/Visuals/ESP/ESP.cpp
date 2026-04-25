@@ -32,10 +32,9 @@ static inline void StorePlayer(CTFPlayer* pPlayer, CTFPlayer* pLocal, Group_t* p
 {
 	int iIndex = pPlayer->entindex();
 
-	if (int iObserverMode = pLocal->m_iObserverMode();
-		iObserverMode == OBS_MODE_FIRSTPERSON || iObserverMode == OBS_MODE_THIRDPERSON
-		? !I::Input->CAM_IsThirdPerson() && iIndex == I::EngineClient->GetLocalPlayer()
-		: iObserverMode == OBS_MODE_FIRSTPERSON && pLocal->m_hObserverTarget().GetEntryIndex() == iIndex)
+	if (int iObserverMode = pLocal->m_iObserverMode(); iObserverMode == OBS_MODE_FIRSTPERSON || iObserverMode == OBS_MODE_THIRDPERSON
+		? iObserverMode == OBS_MODE_FIRSTPERSON && pLocal->m_hObserverTarget().GetEntryIndex() == iIndex
+		: !I::Input->CAM_IsThirdPerson() && iIndex == I::EngineClient->GetLocalPlayer())
 		return;
 
 	auto pWeapon = pPlayer->m_hActiveWeapon()->As<CTFWeaponBase>();
@@ -110,13 +109,13 @@ static inline void StorePlayer(CTFPlayer* pPlayer, CTFPlayer* pLocal, Group_t* p
 				if (!vTags.empty())
 				{
 					std::sort(vTags.begin(), vTags.end(), [&](const auto a, const auto b) -> bool
-						{
-							// sort by priority if unequal
-							if (std::get<2>(a) != std::get<2>(b))
-								return std::get<2>(a) > std::get<2>(b);
+					{
+						// sort by priority if unequal
+						if (std::get<2>(a) != std::get<2>(b))
+							return std::get<2>(a) > std::get<2>(b);
 
-							return std::get<0>(a) < std::get<0>(b);
-						});
+						return std::get<0>(a) < std::get<0>(b);
+					});
 
 					for (auto& [sName, tColor, _] : vTags)
 						tCache.m_vText.emplace_back(ALIGN_TOPRIGHT, sName, tColor, tColor.IsColorDark() ? Color_t(255, 255, 255) : Color_t(0, 0, 0));
@@ -131,7 +130,8 @@ static inline void StorePlayer(CTFPlayer* pPlayer, CTFPlayer* pLocal, Group_t* p
 		tCache.m_flHealth = flHealth > flMaxHealth
 			? 1.f + std::clamp((flHealth - flMaxHealth) / (floorf(flMaxHealth / 10.f) * 5), 0.f, 1.f)
 			: std::clamp(flHealth / flMaxHealth, 0.f, 1.f);
-		Color_t tColor = Vars::Colors::IndicatorBad.Value.Lerp(Vars::Colors::IndicatorGood.Value, std::clamp(tCache.m_flHealth, 0.f, 1.f));
+			
+		Color_t tColor = Vars::Colors::IndicatorBad.Value.Lerp(Vars::Colors::IndicatorGood.Value, std::clamp(tCache.m_flHealth, 0.f, 1.f), LerpEnum::HSV);
 		Bar_t& tBar = tCache.m_vBars.emplace_back();
 		tBar.m_iMode = ALIGN_LEFT;
 		tBar.m_flPercent = tCache.m_flHealth;
@@ -422,16 +422,16 @@ static inline void StorePlayer(CTFPlayer* pPlayer, CTFPlayer* pLocal, Group_t* p
 				}
 				else
 				{
-					auto GetSniperDot = [](CBaseEntity* pEntity) -> CSniperDot*
+					auto fGetSniperDot = [](CBaseEntity* pEntity) -> CSniperDot*
+					{
+						for (auto pDot : H::Entities.GetGroup(EntityEnum::SniperDots))
 						{
-							for (auto pDot : H::Entities.GetGroup(EntityEnum::SniperDots))
-							{
-								if (pDot->m_hOwnerEntity().Get() == pEntity)
-									return pDot->As<CSniperDot>();
-							}
-							return nullptr;
-						};
-					if (CSniperDot* pPlayerDot = GetSniperDot(pPlayer))
+							if (pDot->m_hOwnerEntity().Get() == pEntity)
+								return pDot->As<CSniperDot>();
+						}
+						return nullptr;
+					};
+					if (CSniperDot* pPlayerDot = fGetSniperDot(pPlayer))
 					{
 						float flChargeTime = std::max(SDK::AttribHookValue(3.f, "mult_sniper_charge_per_sec", pWeapon), 1.5f);
 						tCache.m_vText.emplace_back(ALIGN_TOPRIGHT, std::format("Charging {:.0f}%", Math::RemapVal(TICKS_TO_TIME(I::ClientState->m_ClockDriftMgr.m_nServerTick) - pPlayerDot->m_flChargeStartTime() - 0.3f, 0.f, flChargeTime, 0.f, 100.f)), Vars::Menu::Theme::Active.Value, Vars::Menu::Theme::Background.Value);
@@ -507,7 +507,8 @@ static inline void StoreBuilding(CBaseObject* pBuilding, CTFPlayer* pLocal, Grou
 	if (pGroup->m_tESP.Draw & ESPEnum::HealthBar)
 	{
 		tCache.m_flHealth = std::clamp(flHealth / flMaxHealth, 0.f, 1.f);
-		Color_t tColor = Vars::Colors::IndicatorBad.Value.Lerp(Vars::Colors::IndicatorGood.Value, std::clamp(tCache.m_flHealth, 0.f, 1.f));
+		
+		Color_t tColor = Vars::Colors::IndicatorBad.Value.Lerp(Vars::Colors::IndicatorGood.Value, std::clamp(tCache.m_flHealth, 0.f, 1.f), LerpEnum::HSV);
 		Bar_t& tBar = tCache.m_vBars.emplace_back();
 		tBar.m_iMode = ALIGN_LEFT;
 		tBar.m_flPercent = tCache.m_flHealth;
@@ -787,7 +788,7 @@ static inline void StoreMisc(CBaseEntity* pEntity, CTFPlayer* pLocal, Group_t* p
 		const char* sName = "Unknown";
 		switch (pEntity->GetClassID())
 		{
-		case ETFClassID::CTFBaseBoss: sName = "Boss"; break;
+		case ETFClassID::CTFBaseBoss: sName = "NPC"; break;
 		case ETFClassID::CTFTankBoss: sName = "Tank"; break;
 		case ETFClassID::CMerasmus: sName = "Merasmus"; break;
 		case ETFClassID::CEyeballBoss: sName = "Monoculus"; break;
@@ -861,6 +862,8 @@ void CESP::Store(CTFPlayer* pLocal)
 	}
 }
 
+static matrix3x4 s_aBones[MAXSTUDIOBONES];
+
 void CESP::Draw()
 {
 	m_sBarsSeenThisFrame.clear();
@@ -894,8 +897,7 @@ void CESP::DrawPlayers()
 		if (tCache.m_bBones)
 		{
 			auto pPlayer = pEntity->As<CTFPlayer>();
-			matrix3x4 aBones[MAXSTUDIOBONES];
-			if (pPlayer->SetupBones(aBones, MAXSTUDIOBONES, BONE_USED_BY_ANYTHING, I::GlobalVars->curtime))
+			if (pPlayer->SetupBones(s_aBones, MAXSTUDIOBONES, BONE_USED_BY_ANYTHING, I::GlobalVars->curtime))
 			{
 				int iHead = pPlayer->GetBaseToHitbox(HITBOX_HEAD);
 				int iSpine2 = pPlayer->GetBaseToHitbox(HITBOX_SPINE2);
@@ -913,11 +915,11 @@ void CESP::DrawPlayers()
 				int iRightCalf = pPlayer->GetBaseToHitbox(HITBOX_RIGHT_CALF);
 				int iRightFoot = pPlayer->GetBaseToHitbox(HITBOX_RIGHT_FOOT);
 
-				DrawBones(pPlayer, aBones, { iHead, iSpine2, iPelvis }, tCache.m_tColor);
-				DrawBones(pPlayer, aBones, { iSpine2, iLeftUpperarm, iLeftForearm, iLeftHand }, tCache.m_tColor);
-				DrawBones(pPlayer, aBones, { iSpine2, iRightUpperarm, iRightForearm, iRightHand }, tCache.m_tColor);
-				DrawBones(pPlayer, aBones, { iPelvis, iLeftThigh, iLeftCalf, iLeftFoot }, tCache.m_tColor);
-				DrawBones(pPlayer, aBones, { iPelvis, iRightThigh, iRightCalf, iRightFoot }, tCache.m_tColor);
+				DrawBones(pPlayer, s_aBones, { iHead, iSpine2, iPelvis }, tCache.m_tColor);
+				DrawBones(pPlayer, s_aBones, { iSpine2, iLeftUpperarm, iLeftForearm, iLeftHand }, tCache.m_tColor);
+				DrawBones(pPlayer, s_aBones, { iSpine2, iRightUpperarm, iRightForearm, iRightHand }, tCache.m_tColor);
+				DrawBones(pPlayer, s_aBones, { iPelvis, iLeftThigh, iLeftCalf, iLeftFoot }, tCache.m_tColor);
+				DrawBones(pPlayer, s_aBones, { iPelvis, iRightThigh, iRightCalf, iRightFoot }, tCache.m_tColor);
 			}
 		}
 
@@ -933,12 +935,12 @@ void CESP::DrawPlayers()
 				tCache.m_flHealth = flPercent;
 			}
 
-			auto drawBar = [&](int x, int y, int w, int h, EAlign eAlign = ALIGN_LEFT)
+			auto fDrawBar = [&](int x, int y, int w, int h, EAlign eAlign = ALIGN_LEFT)
 				{
 					if (bar.m_tBackground.a)
 						H::Draw.FillRect(x - 1, y - 1, w + 2, h + 2, bar.m_tBackground);
 
-					auto drawSegment = [&](float flAmount, const Color_t& tColor)
+					auto fDrawSegment = [&](float flAmount, const Color_t& tColor)
 					{
 						if (flAmount <= 0.f)
 							return;
@@ -989,12 +991,12 @@ void CESP::DrawPlayers()
 
 					if (flPercent > 1.f)
 					{
-						drawSegment(1.f, bar.m_tColor);
-						drawSegment(flPercent - 1.f, bar.m_tOverfill);
+						fDrawSegment(1.f, bar.m_tColor);
+						fDrawSegment(flPercent - 1.f, bar.m_tOverfill);
 					}
 					else
 					{
-						drawSegment(flPercent, bar.m_tColor);
+						fDrawSegment(flPercent, bar.m_tColor);
 					}
 				};
 
@@ -1003,11 +1005,11 @@ void CESP::DrawPlayers()
 			switch (bar.m_iMode)
 			{
 			case ALIGN_LEFT:
-				drawBar(x - iSpace - iThickness - lOffset, y, iThickness, h, ALIGN_BOTTOM);
+				fDrawBar(x - iSpace - iThickness - lOffset, y, iThickness, h, ALIGN_BOTTOM);
 				lOffset += iSpace + iThickness;
 				break;
 			case ALIGN_BOTTOM:
-				drawBar(x, y + h + iSpace + bOffset, w, iThickness);
+				fDrawBar(x, y + h + iSpace + bOffset, w, iThickness);
 				bOffset += iSpace + iThickness;
 				break;
 			}
@@ -1109,12 +1111,12 @@ void CESP::DrawBuildings()
 				tCache.m_flHealth = flPercent;
 			}
 
-			auto drawBar = [&](int x, int y, int w, int h, EAlign eAlign = ALIGN_LEFT)
+			auto fDrawBar = [&](int x, int y, int w, int h, EAlign eAlign = ALIGN_LEFT)
 				{
 					if (bar.m_tBackground.a)
 						H::Draw.FillRect(x - 1, y - 1, w + 2, h + 2, bar.m_tBackground);
 
-					auto drawSegment = [&](float flAmount, const Color_t& tColor)
+					auto fDrawSegment = [&](float flAmount, const Color_t& tColor)
 					{
 						if (flAmount <= 0.f)
 							return;
@@ -1165,12 +1167,12 @@ void CESP::DrawBuildings()
 
 					if (flPercent > 1.f)
 					{
-						drawSegment(1.f, bar.m_tColor);
-						drawSegment(flPercent - 1.f, bar.m_tOverfill);
+						fDrawSegment(1.f, bar.m_tColor);
+						fDrawSegment(flPercent - 1.f, bar.m_tOverfill);
 					}
 					else
 					{
-						drawSegment(flPercent, bar.m_tColor);
+						fDrawSegment(flPercent, bar.m_tColor);
 					}
 				};
 
@@ -1179,11 +1181,11 @@ void CESP::DrawBuildings()
 			switch (bar.m_iMode)
 			{
 			case ALIGN_LEFT:
-				drawBar(x - iSpace - iThickness - lOffset, y, iThickness, h, ALIGN_BOTTOM);
+				fDrawBar(x - iSpace - iThickness - lOffset, y, iThickness, h, ALIGN_BOTTOM);
 				lOffset += iSpace + iThickness;
 				break;
 			case ALIGN_BOTTOM:
-				drawBar(x, y + h + iSpace + bOffset, w, iThickness);
+				fDrawBar(x, y + h + iSpace + bOffset, w, iThickness);
 				bOffset += iSpace + iThickness;
 				break;
 			}

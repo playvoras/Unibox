@@ -147,7 +147,7 @@ void CMisc::AutoEdgebug(CTFPlayer* pLocal, CUserCmd* pCmd)
 		return;
 	}
 
-	auto RunStrafe = [&]()-> void
+	auto fRunStrafe = [&]()-> void
 		{
 			if (m_iEdgeBugTicksLeft < m_iEdgeBugTicksTotal
 				&& m_vEdgebugPath.size() 
@@ -174,7 +174,7 @@ void CMisc::AutoEdgebug(CTFPlayer* pLocal, CUserCmd* pCmd)
 					return;
 				}
 				pCmd->viewangles.y = Math::NormalizeAngle(m_flEdgeBugStartYaw + m_flEdgeBugYawDelta * (1 + m_iEdgeBugTicksTotal - m_iEdgeBugTicksLeft));
-				if (!Vars::Misc::Movement::AutoEdgebugStrafeSilentLook.Value)
+				if (Vars::Misc::Movement::AutoEdgebug.Value != Vars::Misc::Movement::AutoEdgebugEnum::StrafeSilent)
 					I::EngineClient->SetViewAngles(pCmd->viewangles);
 			}
 			pCmd->buttons = m_bEdgeBugCrouch ? (pCmd->buttons | IN_DUCK) : (pCmd->buttons & ~IN_DUCK);
@@ -195,11 +195,11 @@ void CMisc::AutoEdgebug(CTFPlayer* pLocal, CUserCmd* pCmd)
 		}
 		else
 		{
-			RunStrafe();
+			fRunStrafe();
 			if (m_vEdgebugPath.size())
 			{
 				if (Vars::Colors::EdgebugPath.Value.a)
-					G::PathStorage.emplace_back(m_vEdgebugPath, I::GlobalVars->curtime + TICK_INTERVAL, Vars::Colors::EdgebugPath.Value, Vars::Visuals::Simulation::StyleEnum::Line);
+					G::PathStorage.emplace_back(m_vEdgebugPath, I::GlobalVars->curtime + TICK_INTERVAL, Vars::Colors::EdgebugPath.Value, Vars::Visuals::Prediction::PlayerPath.Value);
 				m_vEdgebugPath.erase(m_vEdgebugPath.begin());
 			}
 			if (!m_bEdgeBugRepredict)
@@ -259,7 +259,7 @@ void CMisc::AutoEdgebug(CTFPlayer* pLocal, CUserCmd* pCmd)
 	}
 
 	float flYawDelta = 30.f;
-	bool bShouldStrafe = Vars::Misc::Movement::AutoEdgebugStrafe.Value && G::Attacking != 1;
+	bool bShouldStrafe = Vars::Misc::Movement::AutoEdgebug.Value > Vars::Misc::Movement::AutoEdgebugEnum::Legit && G::Attacking != 1;
 	if (bShouldStrafe && abs(flCurrentDirDelta) > 1.f)
 		flYawDelta = std::clamp(flCurrentDirDelta, -45.f, 45.f);
 	flYawDelta *= flDirMult;
@@ -291,23 +291,23 @@ void CMisc::AutoEdgebug(CTFPlayer* pLocal, CUserCmd* pCmd)
 			vPath.push_back(pLocal->m_vecOrigin());
 			bEnd = !bStrafe || abs(flYawDelta) >= flMaxYawDelta;
 
-			CUserCmd tPredictionCmd = *pCmd;
-			tPredictionCmd.buttons = bCrouch ? (tPredictionCmd.buttons | IN_DUCK) : (tPredictionCmd.buttons & ~IN_DUCK);
+			G::DummyCmd = *pCmd;
+			G::DummyCmd.buttons = bCrouch ? (G::DummyCmd.buttons | IN_DUCK) : (G::DummyCmd.buttons & ~IN_DUCK);
 
 			if (bStrafe)
 			{
-				if (!tPredictionCmd.forwardmove)
-					tPredictionCmd.forwardmove = 30.f; // makes it detect wallbugs (will probably make it a separate feature later)
-				if (!tPredictionCmd.sidemove)
-					tPredictionCmd.sidemove = 450.f;
+				if (!G::DummyCmd.forwardmove)
+					G::DummyCmd.forwardmove = 30.f; // makes it detect wallbugs (will probably make it a separate feature later)
+				if (!G::DummyCmd.sidemove)
+					G::DummyCmd.sidemove = 450.f;
 			}
 			else
-				tPredictionCmd.forwardmove = tPredictionCmd.sidemove = 0.f;
+				G::DummyCmd.forwardmove = G::DummyCmd.sidemove = 0.f;
 
-			tPredictionCmd.forwardmove = std::clamp(tPredictionCmd.forwardmove * flForwardmoveMult, -450.f, 450.f);
-			tPredictionCmd.sidemove = std::clamp(tPredictionCmd.sidemove * flSidemoveMult, -450.f, 450.f);;
+			G::DummyCmd.forwardmove = std::clamp(G::DummyCmd.forwardmove * flForwardmoveMult, -450.f, 450.f);
+			G::DummyCmd.sidemove = std::clamp(G::DummyCmd.sidemove * flSidemoveMult, -450.f, 450.f);;
 			
-			pLocal->m_pCurrentCommand() = &tPredictionCmd;
+			pLocal->m_pCurrentCommand() = &G::DummyCmd;
 			I::Prediction->m_bFirstTimePredicted = false;
 			I::Prediction->m_bInPrediction = true;
 			I::GlobalVars->frametime = I::Prediction->m_bEnginePaused ? 0.f : TICK_INTERVAL;
@@ -324,13 +324,13 @@ void CMisc::AutoEdgebug(CTFPlayer* pLocal, CUserCmd* pCmd)
 
 				if (bStrafe)
 				{
-					tPredictionCmd.viewangles.y = Math::NormalizeAngle(pCmd->viewangles.y + flYawDelta * iTick);
-					if (abs(tPredictionCmd.viewangles.y - flStartYaw) > Vars::Misc::Movement::AutoEdgebugStrafeMaxDelta.Value)
+					G::DummyCmd.viewangles.y = Math::NormalizeAngle(pCmd->viewangles.y + flYawDelta * iTick);
+					if (abs(G::DummyCmd.viewangles.y - flStartYaw) > Vars::Misc::Movement::AutoEdgebugStrafeMaxDelta.Value)
 						break;
 				}
 
-				I::Prediction->SetLocalViewAngles(tPredictionCmd.viewangles);
-				I::Prediction->SetupMove(pLocal, &tPredictionCmd, I::MoveHelper, &moveData);
+				I::Prediction->SetLocalViewAngles(G::DummyCmd.viewangles);
+				I::Prediction->SetupMove(pLocal, &G::DummyCmd, I::MoveHelper, &moveData);
 				I::GameMovement->ProcessMovement(pLocal, &moveData); // dont mind the sudden water splashing sounds, its just your ghost copy drowning in another realm
 				I::Prediction->FinishMove(pLocal, pCmd, &moveData);
 				vPath.push_back(pLocal->m_vecOrigin());
@@ -362,7 +362,7 @@ void CMisc::AutoEdgebug(CTFPlayer* pLocal, CUserCmd* pCmd)
 						}
 						m_vEdgebugPath = vPath;
 						m_bEdgeBug = bEnd = bSuccess = true;
-						RunStrafe();
+						fRunStrafe();
 						m_bEdgeBugRepredict = !m_bEdgeBug;
 					}
 					break;
@@ -387,6 +387,7 @@ void CMisc::AutoEdgebug(CTFPlayer* pLocal, CUserCmd* pCmd)
 	CPredictionCopy copy = { PC_EVERYTHING, pLocal, PC_DATA_NORMAL, pOriginalData, PC_DATA_PACKED };
 	copy.TransferData("EdgebugReset", iLocalIdx, pDataMap);
 	I::MemAlloc->Free(pOriginalData);
+	G::DummyCmd = {};
 }
 
 void CMisc::AutoStrafe(CTFPlayer* pLocal, CUserCmd* pCmd)
@@ -425,7 +426,7 @@ void CMisc::AutoStrafe(CTFPlayer* pLocal, CUserCmd* pCmd)
 			break;
 
 		float flTurnScale = Math::RemapVal(Vars::Misc::Movement::AutoStrafeTurnScale.Value, 0.f, 1.f, 0.9f, 1.f);
-		float flRotation = DEG2RAD((flDirDelta > 0.f ? -90.f : 90.f) + flDirDelta * flTurnScale);
+		float flRotation = Math::Deg2Rad((flDirDelta > 0.f ? -90.f : 90.f) + flDirDelta * flTurnScale);
 		float flCosRot = cosf(flRotation), flSinRot = sinf(flRotation);
 
 		pCmd->forwardmove = flCosRot * flForward - flSinRot * flSide;
@@ -932,7 +933,7 @@ void CMisc::FastMovement(CTFPlayer* pLocal, CUserCmd* pCmd)
 			return;
 
 		Vec3 vMove = { pCmd->forwardmove, pCmd->sidemove, 0.f };
-		Vec3 vAngMoveReverse = Math::VectorAngles(vMove * -1.f);
+		Vec3 vAngMoveReverse = Math::VectorAngles(-vMove);
 		pCmd->forwardmove = -vMove.Length();
 		pCmd->sidemove = 0.f;
 		pCmd->viewangles.y = fmodf(pCmd->viewangles.y - vAngMoveReverse.y, 360.f);
@@ -1133,8 +1134,9 @@ int CMisc::AntiBackstab(CTFPlayer* pLocal, CUserCmd* pCmd)
 		Vec3 vTargetPos1 = pPlayer->GetCenter();
 		Vec3 vTargetPos2 = vTargetPos1 + pPlayer->m_vecVelocity() * F::Backtrack.GetReal();
 		float flDistance = std::max(std::max(SDK::MaxSpeed(pPlayer), SDK::MaxSpeed(pLocal)), pPlayer->m_vecVelocity().Length());
-		if ((vLocalPos.DistTo(vTargetPos1) > flDistance || !SDK::VisPosWorld(pLocal, pPlayer, vLocalPos, vTargetPos1))
-			&& (vLocalPos.DistTo(vTargetPos2) > flDistance || !SDK::VisPosWorld(pLocal, pPlayer, vLocalPos, vTargetPos2)))
+		float flDistanceSqr = powf(flDistance, 2);
+		if ((vLocalPos.DistToSqr(vTargetPos1) > flDistanceSqr || !SDK::VisPosWorld(pLocal, pPlayer, vLocalPos, vTargetPos1))
+			&& (vLocalPos.DistToSqr(vTargetPos2) > flDistanceSqr || !SDK::VisPosWorld(pLocal, pPlayer, vLocalPos, vTargetPos2)))
 			continue;
 
 		vTargets.emplace_back(vTargetPos2, pEntity);
@@ -1143,9 +1145,9 @@ int CMisc::AntiBackstab(CTFPlayer* pLocal, CUserCmd* pCmd)
 		return 0;
 
 	std::sort(vTargets.begin(), vTargets.end(), [&](const auto& a, const auto& b) -> bool
-		{
-			return pLocal->GetCenter().DistTo(a.first) < pLocal->GetCenter().DistTo(b.first);
-		});
+	{
+		return pLocal->GetCenter().DistToSqr(a.first) < pLocal->GetCenter().DistToSqr(b.first);
+	});
 
 	auto& pTargetPos = vTargets.front();
 	switch (Vars::Misc::Automation::AntiBackstab.Value)
@@ -1166,28 +1168,28 @@ int CMisc::AntiBackstab(CTFPlayer* pLocal, CUserCmd* pCmd)
 		// if the closest spy is a cheater, assume auto stab is being used, otherwise don't do anything if target is in front
 		if (!bCheater)
 		{
-			auto TargetIsBehind = [&]()
-				{
-					const float flCompDist = PLAYER_ORIGIN_COMPRESSION / 2;
-					const float flSqCompDist = 0.0884f;
+			auto fTargetIsBehind = [&]()
+			{
+				const float flCompDist = PLAYER_ORIGIN_COMPRESSION / 2;
+				const float flSqCompDist = 0.0884f;
 
-					Vec3 vToTarget = (pLocal->m_vecOrigin() - pTargetPos.first).To2D();
-					const float flDist = vToTarget.Normalize();
-					if (flDist < flSqCompDist)
-						return true;
+				Vec3 vToTarget = (pLocal->m_vecOrigin() - pTargetPos.first).To2D();
+				const float flDist = vToTarget.Normalize();
+				if (flDist < flSqCompDist)
+					return true;
 
-					const float flExtra = 2.f * flCompDist / flDist; // account for origin compression
-					float flPosVsTargetViewMinDot = 0.f - 0.0031f - flExtra;
+				const float flExtra = 2.f * flCompDist / flDist; // account for origin compression
+				float flPosVsTargetViewMinDot = 0.f - 0.0031f - flExtra;
 
-					Vec3 vTargetForward; Math::AngleVectors(pCmd->viewangles, &vTargetForward);
-					vTargetForward.Normalize2D();
+				Vec3 vTargetForward; Math::AngleVectors(pCmd->viewangles, &vTargetForward);
+				vTargetForward.Normalize2D();
 
-					const float flPosVsTargetViewDot = vToTarget.Dot(vTargetForward); // Behind?
+				const float flPosVsTargetViewDot = vToTarget.Dot(vTargetForward); // Behind?
 
-					return flPosVsTargetViewDot > flPosVsTargetViewMinDot;
-				};
+				return flPosVsTargetViewDot > flPosVsTargetViewMinDot;
+			};
 
-			if (!TargetIsBehind())
+			if (!fTargetIsBehind())
 				return 0;
 		}
 

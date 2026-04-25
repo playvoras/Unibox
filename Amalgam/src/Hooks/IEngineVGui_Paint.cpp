@@ -30,6 +30,7 @@ MAKE_HOOK(IEngineVGui_Paint, U::Memory.GetVirtual(I::EngineVGui, 14), void,
 	{
 		H::Draw.UpdateScreenSize();
 		H::Draw.UpdateW2SMatrix();
+
 		H::Draw.Start(true);
 		if (auto pLocal = H::Entities.GetLocal())
 		{
@@ -61,6 +62,8 @@ MAKE_HOOK(IEngineVGui_Paint, U::Memory.GetVirtual(I::EngineVGui, 14), void,
 	if (iMode & PAINT_UIPANELS && !SDK::CleanScreenshot())
 	{
 		H::Draw.UpdateScreenSize();
+		H::Draw.UpdateKeyStrings();
+
 		H::Draw.Start();
 		{
 			F::Notifications.Draw();
