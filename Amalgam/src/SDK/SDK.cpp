@@ -380,7 +380,7 @@ std::wstring SDK::ConvertUtf8ToWide(const std::string& source)
 	if (source.empty())
 		return L"";
 
-	int size = MultiByteToWideChar(CP_UTF8, 0, source.data(), static_cast<int>(source.size()), nullptr, 0);
+	int size = MultiByteToWideChar(CP_UTF8, 0, source.data(), -1, nullptr, 0);
 	if (size <= 0)
 		return L"";
 
@@ -394,7 +394,7 @@ std::string SDK::ConvertWideToUTF8(const std::wstring& source)
 	if (source.empty())
 		return "";
 
-	int size = WideCharToMultiByte(CP_UTF8, 0, source.data(), static_cast<int>(source.size()), nullptr, 0, nullptr, nullptr);
+	int size = WideCharToMultiByte(CP_UTF8, 0, source.data(), -1, nullptr, 0, nullptr, nullptr);
 	if (size <= 0)
 		return "";
 
