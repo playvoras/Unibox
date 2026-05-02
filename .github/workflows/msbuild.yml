@@ -1,36 +1,83 @@
 name: MSBuild
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
 
 jobs:
-  msbuild:
+  Setup:
+    name: Create Release
     runs-on: windows-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.CreateRelease.outputs.tag }}
+    steps:
+      - name: Create Release
+        id: CreateRelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $Tag = "v$(Get-Date -UFormat '%Y.%m.%d')"
+          gh release delete $Tag --repo "$env:GITHUB_REPOSITORY" --yes 2>$null; $LASTEXITCODE = 0
+          gh api --method DELETE "/repos/$env:GITHUB_REPOSITORY/git/refs/tags/$Tag" 2>$null; $LASTEXITCODE = 0
+          gh release create $Tag --repo "$env:GITHUB_REPOSITORY" --title "Unibox $Tag" --notes "Automated build for $Tag"
+          echo "tag=$Tag" >> $env:GITHUB_OUTPUT
 
+  Build:
+    name: Build (${{ matrix.Configuration }})
+    runs-on: windows-latest
+    needs: Setup
+    if: always()
+    permissions:
+      contents: write
     strategy:
+      fail-fast: false
       matrix:
-        configuration: [Release, ReleaseAVX2, ReleaseFreetype, ReleaseFreetypeAVX2, ReleaseTextmode, ReleaseTextmodeAVX2]
-        platform: [x64]
+        Configuration:
+          - Release
+          - ReleaseAVX2
+          - ReleaseFreetype
+          - ReleaseFreetypeAVX2
+          - ReleaseTextmode
+          - ReleaseTextmodeAVX2
+    env:
+      _CL_: >-
+        /Ox /Ob3 /GL /fp:precise /volatile:iso
+        /Gw /Zc:inline /Zc:threadSafeInit- /Zc:throwingNew
+        /Qpar /guard:cf- /d2FH4- /EHsc
+      _LINK_: >-
+        /LTCG /OPT:REF /OPT:ICF=67 /INCREMENTAL:NO /RELEASE /CGTHREADS:8
+        /MERGE:.rdata=.text /MERGE:.pdata=.text /FILEALIGN:512
+        /DYNAMICBASE:NO /FIXED:NO /NXCOMPAT:NO
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    - name: Add MSBuild to PATH
-      uses: microsoft/setup-msbuild@v2
-
-    - name: Restore NuGet packages
-      working-directory: ${{ env.GITHUB_WORKSPACE }}
-      run: nuget restore
-
-    - name: Build
-      working-directory: ${{ env.GITHUB_WORKSPACE }}
-      run: msbuild Amalgam.sln /p:Platform=${{ matrix.platform }} /p:Configuration=${{ matrix.configuration }}
-    
-    - uses: actions/upload-artifact@v4
-      with:
-        name: Amalgam${{ matrix.platform }}${{ matrix.configuration }}
-        path: output/${{ matrix.platform }}/${{ matrix.configuration }}/*.dll
-    
-    - uses: actions/upload-artifact@v4
-      with:
-        name: Amalgam${{ matrix.platform }}${{ matrix.configuration }}PDB
-        path: output/${{ matrix.platform }}/${{ matrix.configuration }}/*.pdb
+      - name: Build & Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          Tag: ${{ needs.Setup.outputs.tag }}
+          Config: ${{ matrix.Configuration }}
+        run: |
+          $MsBuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -requires Microsoft.Component.MSBuild `
+            -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          nuget restore Amalgam.sln
+          & $MsBuild Amalgam.sln `
+            /p:Platform=x64 `
+            /p:Configuration=$env:Config `
+            /p:UseMultiToolTask=true `
+            /p:EnforceProcessCountAcrossBuilds=true `
+            /p:CL_MPCount=8 `
+            /m /maxCpuCount /nodeReuse:true /verbosity:minimal
+          if ($env:Tag) {
+            $Files = Get-ChildItem "output/x64/$env:Config" -Include *.dll,*.pdb -Recurse
+            Compress-Archive -Path $Files.FullName -DestinationPath "$env:Config.zip"
+            gh release upload $env:Tag "$env:Config.zip" --repo "$env:GITHUB_REPOSITORY"
+          }
