@@ -3,31 +3,35 @@
 #include "../../Misc/NamedPipe/NamedPipe.h"
 #include "../../Players/PlayerUtils.h"
 
+static bool IsProtectedVoteRole(uint32_t uAccountID)
+{
+	if (!uAccountID)
+		return false;
+
+#ifdef TEXTMODE
+	if (F::NamedPipe.IsLocalBot(uAccountID))
+		return true;
+#endif
+
+	return F::PlayerUtils.IsIgnored(uAccountID) || H::Entities.IsFriend(uAccountID) || H::Entities.InParty(uAccountID);
+}
+
 static void HandleVote(CTFPlayerResource* pResource, const int iVoteID, const int iCaller, const int iTarget)
 {
 	auto uTargetAccountID = pResource->m_iAccountID(iTarget);
 	bool bDefend = Vars::Misc::Automation::AutoVote.Value & Vars::Misc::Automation::AutoVoteEnum::Defend;
-#ifdef TEXTMODE
-	if (bDefend && F::NamedPipe.IsLocalBot(uTargetAccountID))
-	{
-		I::ClientState->SendStringCmd(std::format("vote {} option2", iVoteID).c_str());
-		return;
-	}
-#endif
-
+	bool bTargetProtected = IsProtectedVoteRole(uTargetAccountID);
 	int iTargetPriority = H::Entities.GetPriority(uTargetAccountID, PriorityTypeEnum::Vote);
-	bool bDefendRole = F::PlayerUtils.IsIgnored(uTargetAccountID) || H::Entities.IsFriend(uTargetAccountID) || H::Entities.InParty(uTargetAccountID);
-	bool bDefendTarget = bDefend && (iTargetPriority < 0 || bDefendRole);
+	bool bDefendTarget = bDefend && (iTargetPriority < 0 || bTargetProtected);
 	if (pResource->m_bValid(iCaller))
 	{
 		auto uCallerAccountID = pResource->m_iAccountID(iCaller);
-#ifdef TEXTMODE
-		if (F::NamedPipe.IsLocalBot(uCallerAccountID))
+		if (IsProtectedVoteRole(uCallerAccountID) && !bTargetProtected)
 		{
 			I::ClientState->SendStringCmd(std::format("vote {} option1", iVoteID).c_str());
 			return;
 		}
-#endif
+
 		if (bDefendTarget)
 			I::ClientState->SendStringCmd(std::format("vote {} option2", iVoteID).c_str());
 		else if (Vars::Misc::Automation::AutoVote.Value & Vars::Misc::Automation::AutoVoteEnum::Kick && iTargetPriority > 0)
