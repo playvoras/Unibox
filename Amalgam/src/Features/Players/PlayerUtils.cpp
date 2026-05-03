@@ -152,7 +152,8 @@ bool CPlayerlistUtils::HasTags(uint32_t uAccountID, std::unordered_map<uint32_t,
 	if (!uAccountID)
 		return false;
 
-	return !mPlayerTags[uAccountID].empty();
+	auto it = mPlayerTags.find(uAccountID);
+	return it != mPlayerTags.end() && !it->second.empty();
 }
 bool CPlayerlistUtils::HasTags(int iIndex, std::unordered_map<uint32_t, std::vector<int>>& mPlayerTags)
 {
@@ -175,8 +176,12 @@ bool CPlayerlistUtils::HasTag(uint32_t uAccountID, int iID, std::unordered_map<u
 	if (!uAccountID)
 		return false;
 
-	auto it = std::ranges::find_if(mPlayerTags[uAccountID], [iID](const auto& _iID) { return iID == _iID; });
-	return it != mPlayerTags[uAccountID].end();
+	auto it = mPlayerTags.find(uAccountID);
+	if (it == mPlayerTags.end())
+		return false;
+
+	auto tag_it = std::ranges::find_if(it->second, [iID](const auto& _iID) { return iID == _iID; });
+	return tag_it != it->second.end();
 }
 bool CPlayerlistUtils::HasTag(int iIndex, int iID, std::unordered_map<uint32_t, std::vector<int>>& mPlayerTags)
 {
@@ -450,8 +455,15 @@ PriorityLabel_t* CPlayerlistUtils::GetSignificantTag(int iIndex, int iMode)
 
 bool CPlayerlistUtils::IsIgnored(uint32_t uAccountID)
 {
-	const int iPriority = GetPriority(uAccountID);
-	const int iIgnored = m_vTags[TagToIndex(IGNORED_TAG)].m_iPriority;
+	if (!uAccountID)
+		return false;
+
+	const int iIgnoredTag = TagToIndex(IGNORED_TAG);
+	if (HasTag(uAccountID, iIgnoredTag))
+		return true;
+
+	const int iPriority = GetPriority(uAccountID, false);
+	const int iIgnored = m_vTags[iIgnoredTag].m_iPriority;
 	return iPriority <= iIgnored;
 }
 bool CPlayerlistUtils::IsIgnored(int iIndex)

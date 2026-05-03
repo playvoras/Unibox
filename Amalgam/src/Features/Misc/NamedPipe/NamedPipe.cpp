@@ -749,7 +749,7 @@ void CNamedPipe::UpdateLocalBotIgnoreStatus()
 	}
 
 	int iIgnoredTagIdx = F::PlayerUtils.TagToIndex(IGNORED_TAG);
-	int iFriendTagIdx = F::PlayerUtils.TagToIndex(IGNORED_TAG);
+	int iFriendTagIdx = F::PlayerUtils.TagToIndex(FRIEND_TAG);
 	for (const auto& uAccountID : vLocalBotIds)
 	{
 		if (!F::PlayerUtils.HasTag(uAccountID, iIgnoredTagIdx) ||
